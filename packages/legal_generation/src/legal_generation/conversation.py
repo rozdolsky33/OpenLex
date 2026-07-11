@@ -18,6 +18,11 @@ from legal_generation.reformulate import reformulate_query
 from legal_generation.types import ConversationTurn
 
 
+class ConversationNotFound(Exception):
+    """Raised when a given conversation_id doesn't exist, or isn't a valid UUID at all --
+    both map to the same client-facing 404 in apps/api/routers/query.py."""
+
+
 async def _load_conversation(
     session: AsyncSession, conversation_id: str | None
 ) -> tuple[Conversation, list[ConversationTurn]]:
@@ -27,9 +32,14 @@ async def _load_conversation(
         await session.flush()  # assigns conversation.id, needed for the Message FK below
         return conversation, []
 
-    found_conversation = await session.get(Conversation, uuid.UUID(conversation_id))
+    try:
+        conversation_uuid = uuid.UUID(conversation_id)
+    except ValueError as exc:
+        raise ConversationNotFound(f"conversation {conversation_id} not found") from exc
+
+    found_conversation = await session.get(Conversation, conversation_uuid)
     if found_conversation is None:
-        raise ValueError(f"conversation {conversation_id} not found")
+        raise ConversationNotFound(f"conversation {conversation_id} not found")
     conversation = found_conversation
 
     rows = (

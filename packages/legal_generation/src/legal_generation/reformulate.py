@@ -40,8 +40,7 @@ async def reformulate_query(history: list[ConversationTurn], question: str) -> s
             max_tokens=256,
             messages=[{"role": "user", "content": prompt}],
         )
-    except anthropic.APIError:
+        text_block = next(block for block in response.content if block.type == "text")
+        return text_block.text.strip()
+    except (anthropic.APIError, StopIteration):
         return question
-
-    text_block = next(block for block in response.content if block.type == "text")
-    return text_block.text.strip()

@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from legal_generation.conversation import ConversationNotFound
 from legal_models.schemas import Citation, QueryResponse
 from openlex_api.main import app
 from openlex_shared.db import get_session
@@ -74,7 +75,7 @@ def test_query_passes_question_conversation_id_top_k_and_doc_type_through() -> N
 def test_query_returns_404_when_conversation_id_is_unknown() -> None:
     with patch(
         "openlex_api.routers.query.handle_query_turn",
-        AsyncMock(side_effect=ValueError("conversation abc not found")),
+        AsyncMock(side_effect=ConversationNotFound("conversation abc not found")),
     ):
         response = client.post(
             "/query", json={"question": "what about pets?", "conversation_id": "abc"}

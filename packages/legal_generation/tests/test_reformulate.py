@@ -44,3 +44,16 @@ async def test_reformulate_query_falls_back_to_raw_question_on_claude_error() ->
         result = await reformulate_query(history, "what about pets?")
 
     assert result == "what about pets?"
+
+
+async def test_reformulate_query_falls_back_to_raw_question_when_response_has_no_text_block() -> (
+    None
+):
+    mock_client = AsyncMock()
+    mock_client.messages.create.return_value = type("Response", (), {"content": []})()
+    history = [ConversationTurn(question="what is a tenant?", answer="A tenant is defined as...")]
+
+    with patch("legal_generation.reformulate.anthropic.AsyncAnthropic", return_value=mock_client):
+        result = await reformulate_query(history, "what about pets?")
+
+    assert result == "what about pets?"

@@ -11,7 +11,7 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from legal_generation.conversation import handle_query_turn
+from legal_generation.conversation import ConversationNotFound, handle_query_turn
 from legal_generation.types import ConversationTurn
 from legal_models.orm import Conversation, Message
 from legal_models.schemas import Citation, QueryResponse
@@ -116,12 +116,23 @@ async def test_handle_query_turn_loads_history_for_an_existing_conversation() ->
     assert mock_generate.call_args.kwargs["history"] == history_arg
 
 
-async def test_handle_query_turn_raises_value_error_for_unknown_conversation_id() -> None:
+async def test_handle_query_turn_raises_conversation_not_found_for_unknown_conversation_id() -> (
+    None
+):
     session = AsyncMock(spec=AsyncSession)
     session.get.return_value = None
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ConversationNotFound):
         await handle_query_turn(session, "what about pets?", conversation_id=str(uuid.uuid4()))
+
+
+async def test_handle_query_turn_raises_conversation_not_found_for_malformed_conversation_id() -> (
+    None
+):
+    session = AsyncMock(spec=AsyncSession)
+
+    with pytest.raises(ConversationNotFound):
+        await handle_query_turn(session, "what about pets?", conversation_id="not-a-valid-uuid")
 
 
 async def test_handle_query_turn_persists_the_new_turn_and_commits() -> None:
