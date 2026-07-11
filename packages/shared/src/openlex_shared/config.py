@@ -14,5 +14,7 @@ class Settings(BaseSettings):
 
     embedding_model_name: str = "BAAI/bge-small-en-v1.5"
 
+    cors_allow_origins: list[str] = ["http://localhost:5173"]
+
 
 settings = Settings()  # type: ignore[call-arg]  # pydantic-settings fills these from .env at runtime
