@@ -10,6 +10,7 @@ dependencies = [
     "pydantic>=2.10.4",
     "sqlalchemy[asyncio]>=2.0.36",
     "pgvector>=0.3.6",
+    "email-validator>=2.3.0",
 ]
 
 [tool.hatch.build.targets.wheel]

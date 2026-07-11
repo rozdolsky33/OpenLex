@@ -10,6 +10,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./migrations/postgres/0001_init.sql:/docker-entrypoint-initdb.d/0001_init.sql
+      - ./migrations/postgres/0002_users.sql:/docker-entrypoint-initdb.d/0002_users.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U openlex"]
       interval: 5s
@@ -33,6 +34,7 @@ services:
       - /var/lib/postgresql/data
     volumes:
       - ./migrations/postgres/0001_init.sql:/docker-entrypoint-initdb.d/0001_init.sql
+      - ./migrations/postgres/0002_users.sql:/docker-entrypoint-initdb.d/0002_users.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U openlex_test -d openlex_test"]
       interval: 5s

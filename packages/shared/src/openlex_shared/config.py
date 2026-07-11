@@ -14,5 +14,9 @@ class Settings(BaseSettings):
 
     embedding_model_name: str = "BAAI/bge-small-en-v1.5"
 
+    jwt_secret_key: str
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60
+
 
 settings = Settings()  # type: ignore[call-arg]  # pydantic-settings fills these from .env at runtime

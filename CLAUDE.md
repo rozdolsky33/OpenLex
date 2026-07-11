@@ -21,10 +21,16 @@ grounded generate — is implemented and wired together (see ADR-0002 for the re
 generation design). What's built:
 
 - `apps/api/src/openlex_api/main.py` is a working FastAPI entrypoint: `/healthz` (DB +
-  embedding-model-loaded probe), and the `query`/`ingest` routers are mounted. The embedding
-  model is preloaded at startup via `lifespan` so it isn't the first request's problem.
-- `apps/api/src/openlex_api/routers/query.py` implements `POST /query`: `legal_retrieval`'s
-  `hybrid_search` (pgvector cosine + Postgres FTS, fused by reciprocal rank fusion) feeds
+  embedding-model-loaded probe), and the `auth`/`query`/`ingest` routers are mounted. The
+  embedding model is preloaded at startup via `lifespan` so it isn't the first request's
+  problem.
+- `apps/api/src/openlex_api/routers/auth.py` + `apps/api/src/openlex_api/auth.py` implement
+  simple JWT auth: `POST /auth/register` (email/password, bcrypt-hashed), `POST /auth/login`
+  (OAuth2 password form, returns a 60-minute HS256 access token). Authentication only — no
+  roles. `users` table added in `migrations/postgres/0002_users.sql`.
+- `apps/api/src/openlex_api/routers/query.py` implements `POST /query`: requires a valid
+  bearer token (`get_current_user`, 401 otherwise). `legal_retrieval`'s `hybrid_search`
+  (pgvector cosine + Postgres FTS, fused by reciprocal rank fusion) feeds
   `legal_generation`'s `generate_answer` (grounded, tool-forced, hard-abstains on empty
   retrieval — see the `grounded-answer-contract` skill).
 - `apps/api/src/openlex_api/routers/ingest.py` is a deliberate `501`: ingestion runs in the

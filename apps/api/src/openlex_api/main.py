@@ -8,7 +8,7 @@ from openlex_shared.db import get_session
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openlex_api.routers import ingest, query
+from openlex_api.routers import auth, ingest, query
 
 
 @asynccontextmanager
@@ -20,6 +20,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="OpenLex API", lifespan=lifespan)
+app.include_router(auth.router)
 app.include_router(query.router)
 app.include_router(ingest.router)
 

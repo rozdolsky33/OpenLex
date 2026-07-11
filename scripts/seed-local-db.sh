@@ -7,3 +7,4 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 docker compose exec -T db psql -U openlex -d openlex < migrations/postgres/0001_init.sql
+docker compose exec -T db psql -U openlex -d openlex < migrations/postgres/0002_users.sql
