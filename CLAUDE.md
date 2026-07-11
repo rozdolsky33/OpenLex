@@ -16,24 +16,47 @@ mapping of where the old `backend/`/`frontend/` code moved to.
 
 ## Current state (important)
 
-This is an early-stage project. Config, DB schema/models, response schemas, and the statute
-ingestion client exist and are wired into the new monorepo layout; most of the actual
-application code does **not** exist yet:
+The end-to-end statute path — ingest → normalize → chunk → embed → index → hybrid retrieve →
+grounded generate — is implemented and wired together (see ADR-0002 for the retrieval/
+generation design). What's built:
 
-- No `apps/api/src/openlex_api/main.py` (FastAPI entrypoint) — `apps/api/Dockerfile`'s CMD
-  (`uvicorn openlex_api.main:app`) will not currently run.
-- `apps/api/src/openlex_api/routers/`, `packages/legal_retrieval/`,
-  `packages/legal_generation/`, `packages/legal_parsing/` are empty packages (just
-  `__init__.py`) — no endpoints, hybrid retrieval, grounded generation, or chunking code yet.
-- No `apps/worker/src/openlex_worker/__main__.py` — the worker container's CMD
-  (`python -m openlex_worker`) will not currently run. `scripts/ingest.sh` checks for this
-  file and exits with a clear message if it's missing rather than failing opaquely.
-- No case-law ingestion code or `pipelines/ingestion/ny_case_law/seed_cases.json` (statute
-  ingestion via `pipelines/ingestion/ny_legislation/client.py` + `seed_statutes.json` does
-  exist).
+- `apps/api/src/openlex_api/main.py` is a working FastAPI entrypoint: `/healthz` (DB +
+  embedding-model-loaded probe), and the `query`/`ingest` routers are mounted. The embedding
+  model is preloaded at startup via `lifespan` so it isn't the first request's problem.
+- `apps/api/src/openlex_api/routers/query.py` implements `POST /query`: `legal_retrieval`'s
+  `hybrid_search` (pgvector cosine + Postgres FTS, fused by reciprocal rank fusion) feeds
+  `legal_generation`'s `generate_answer` (grounded, tool-forced, hard-abstains on empty
+  retrieval — see the `grounded-answer-contract` skill).
+- `apps/api/src/openlex_api/routers/ingest.py` is a deliberate `501`: ingestion runs in the
+  worker container only, not via the API (see the router's docstring for why `pipelines/`
+  can't be imported from `apps/api`).
+- `packages/legal_retrieval/` has `embeddings.py` (BGE asymmetric query/passage embedding,
+  `BAAI/bge-small-en-v1.5`) and `search.py` (the hybrid RRF search implementation).
+- `packages/legal_generation/` has `generator.py` (grounded answer generation; see
+  `ml/prompts/statute_qa_system.txt` for the system prompt).
+- `packages/legal_parsing/` has `chunker.py` — v1 chunks one statute section into exactly one
+  chunk (no subsection splitting yet; see ADR-0002 for why and its known truncation
+  limitation on long sections).
+- `apps/worker/src/openlex_worker/__main__.py` + `cli.py` implement
+  `python -m openlex_worker ingest --source {statutes|cases|all}`, so `scripts/ingest.sh` now
+  runs for real. `pipelines/normalization/statutes.py` and `pipelines/indexing/statutes.py`
+  do the normalize→chunk→embed→upsert work, respecting immutable `(source, source_id,
+  version)` rows (no in-place updates — a changed document gets a new version).
+- `tests/integration/` now has real tests (`test_indexing.py`, `test_normalization.py`,
+  `test_search.py`) against a real Postgres+pgvector — see `scripts/test-db.sh` and
+  `tests/integration/README.md` for how to run them.
+- `tests/evaluation/golden_questions.yaml` + `test_golden_questions.py` now exist: a
+  parametrized, real-API golden-question suite marked `evaluation` and excluded from the
+  default `uv run pytest` run (real Anthropic calls, needs a running server — see
+  `tests/evaluation/README.md`). `scripts/evaluate.sh` runs it for real now.
+
+Still not built:
+
+- No case-law ingestion code or `pipelines/ingestion/ny_case_law/seed_cases.json` — that
+  directory is still just a README. Case law isn't retrievable yet; `hybrid_search`/
+  `/query` only ever return statute passages.
 - `apps/web/` has only empty `src/api/` and `src/components/` directories — no
   `package.json`, no Vite/React setup, no actual UI code yet.
-- `tests/evaluation/` exists but has no `golden_questions.yaml` yet.
 
 Before assuming a module/endpoint/script exists, check for it — don't rely on the README's or
 this file's description of the target architecture as current fact.
@@ -47,6 +70,7 @@ uv run ruff format .            # format
 uv run mypy apps packages       # typecheck
 uv run pytest                   # run all tests (root pyproject.toml sets testpaths)
 uv run --package openlex-api pytest apps/api/tests   # run one package/app's tests only
+scripts/test-db.sh up            # start db-test (Postgres+pgvector on :5544) for tests/integration
 ```
 
 ```bash
