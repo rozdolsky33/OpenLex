@@ -8,14 +8,12 @@ on:
       - "ml/prompts/**"
       - "pipelines/chunking/**"
       - "tests/evaluation/**"
-  push:
-    branches: [main]
-    paths:
-      - "packages/legal_retrieval/**"
-      - "packages/legal_generation/**"
-      - "ml/prompts/**"
-      - "pipelines/chunking/**"
-      - "tests/evaluation/**"
+  # Manual, not automatic-on-push-to-main: the dual-model (Haiku + Sonnet) comparison run
+  # below costs roughly 2x a normal eval pass in real Anthropic spend, so it's triggered
+  # deliberately (Actions tab > evaluation > Run workflow, or `gh workflow run evaluation.yml
+  # --ref main`) rather than firing on every merge during active development. See
+  # docs/decisions/0004-golden-question-report-and-pages.md.
+  workflow_dispatch: {}
 
 jobs:
   golden-questions:
@@ -28,10 +26,11 @@ jobs:
     # skips gracefully with a ::notice:: rather than failing.
     #
     # On pull_request: single Haiku pass only, matching this job's original (pre-report) cost.
-    # On push to main: also runs a second Sonnet pass (the production default model), a
-    # statute-freshness check, and uploads results for the publish-eval-report job below --
-    # see docs/decisions/0004-golden-question-report-and-pages.md for why this is gated to
-    # main-only (the dual-model pass roughly doubles real Anthropic spend for this job).
+    # On workflow_dispatch (manual trigger only, see the `on:` block above): also runs a
+    # second Sonnet pass (the production default model), a statute-freshness check, and
+    # uploads results for the publish-eval-report job below -- see
+    # docs/decisions/0004-golden-question-report-and-pages.md for why this is manual-only
+    # (the dual-model pass roughly doubles real Anthropic spend for this job).
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -122,7 +121,7 @@ jobs:
         run: scripts/ingest.sh statutes
 
       - name: Check statute freshness
-        if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'push'
+        if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'workflow_dispatch'
         continue-on-error: true
         env:
           DATABASE_URL: postgresql+asyncpg://openlex:openlex@localhost:5432/openlex
@@ -143,7 +142,7 @@ jobs:
         run: scripts/evaluate.sh
 
       - name: Verify production model default hasn't drifted
-        if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'push'
+        if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'workflow_dispatch'
         run: |
           uv run python -c "
           from openlex_shared.config import Settings
@@ -160,7 +159,7 @@ jobs:
         # workflow being updated to match.
 
       - name: Write .env for the live stack (Sonnet)
-        if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'push'
+        if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'workflow_dispatch'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           NY_OPEN_LEG_API_KEY: ${{ secrets.NY_OPEN_LEG_API_KEY }}
@@ -178,7 +177,7 @@ jobs:
           EOF
 
       - name: Recreate api with the new model
-        if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'push'
+        if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'workflow_dispatch'
         run: docker compose up -d --force-recreate --no-deps api
         # A recreate, not a restart, is required: openlex_shared.config.Settings is a
         # module-level singleton built once at container process start from `env_file: .env`
@@ -187,7 +186,7 @@ jobs:
         # Claude, no need to recreate it).
 
       - name: Wait for API to report status=ok (Sonnet)
-        if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'push'
+        if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'workflow_dispatch'
         run: |
           for i in $(seq 1 60); do
             health_status=$(curl -sf http://localhost:8000/healthz | jq -r '.status' 2>/dev/null || echo "unreachable")
@@ -205,7 +204,7 @@ jobs:
         # wait is real time, not free.
 
       - name: Run golden-question evaluation (Sonnet)
-        if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'push'
+        if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'workflow_dispatch'
         env:
           EVAL_API_BASE_URL: http://localhost:8000
           EVAL_RESULTS_PATH: results-sonnet.json
@@ -221,7 +220,7 @@ jobs:
         run: docker compose down -v --remove-orphans
 
       - name: Upload results artifacts
-        if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'push'
+        if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: eval-results
@@ -234,7 +233,7 @@ jobs:
 
   publish-eval-report:
     needs: golden-questions
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -250,7 +249,7 @@ jobs:
     concurrency:
       group: eval-report-publish
       cancel-in-progress: false # queue, don't cancel/collide -- primary defense against two
-        # close-together main-push runs racing on the gh-pages append.
+        # close-together manual dispatch runs racing on the gh-pages append.
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
