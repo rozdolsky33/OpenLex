@@ -1,0 +1,132 @@
+# Golden-question legal-accuracy regression suite. Each question is sent to a live, running
+# API's POST /query (see scripts/evaluate.sh); passing means the retrieval+generation pipeline
+# still grounds each answer in the expected statute citation, or still abstains where it should.
+#
+# Fields:
+#   id                  unique slug, used as the pytest test id.
+#   question            sent verbatim as POST /query's "question".
+#   expected_citations  OR-matched against the "citation" values actually returned -- at least
+#                       one must match. Omit/leave empty when expect_abstain is true.
+#   expect_abstain      true for questions with no supporting statute among the seeded sections
+#                       (pipelines/ingestion/ny_legislation/seed_statutes.json) -- asserts
+#                       abstained=true and empty citations instead of expected_citations.
+#   notes               why this question/citation pairing was chosen (cite the statute
+#                       language, not just the section title).
+#
+# Covers every section in seed_statutes.json at least once, plus two out-of-scope questions to
+# regression-test the hard-abstain path.
+
+questions:
+  - id: notice-before-nonpayment-proceeding
+    question: "How much notice must a landlord give a tenant before starting a nonpayment eviction proceeding in New York?"
+    expected_citations: ["RPAPL § 711"]
+    notes: "§ 711(2) requires at least fourteen days' written rent demand before a nonpayment proceeding."
+
+  - id: grounds-landlord-tenant-relationship
+    question: "What are the grounds for starting a special proceeding to recover possession from a tenant?"
+    expected_citations: ["RPAPL § 711"]
+    notes: "§ 711 lists the grounds (holdover, nonpayment, tax default, bankruptcy, illegal use, etc.)."
+
+  - id: jurisdiction-and-venue
+    question: "Which courts have jurisdiction over a landlord-tenant summary proceeding in New York, and where should it be venued?"
+    expected_citations: ["RPAPL § 701"]
+    notes: "§ 701 is titled 'Jurisdiction; courts; venue'."
+
+  - id: grounds-no-landlord-tenant-relationship
+    question: "What are the grounds for a proceeding to recover real property when there is no landlord-tenant relationship, such as against a licensee or squatter?"
+    expected_citations: ["RPAPL § 713"]
+    notes: "§ 713 is titled 'Grounds where no landlord-tenant relationship exists'."
+
+  - id: illegal-use-eviction
+    question: "If neighbors or a local enforcement agency believe a rented property is being used for prostitution or an illegal business, can they force the landlord to start eviction proceedings against that occupant?"
+    expected_citations: ["RPAPL § 715"]
+    notes: >
+      § 715 is the third-party/enforcement-agency notice-and-application mechanism, distinct
+      from § 711 ground 5 (the landlord's own direct eviction ground for the same conduct) --
+      an earlier, more generic phrasing of this question ambiguously matched § 711 instead.
+
+  - id: commencement-notice-of-petition
+    question: "How is a landlord-tenant summary proceeding commenced, and what notice of petition must be given?"
+    expected_citations: ["RPAPL § 731"]
+    notes: "§ 731 is titled 'Commencement; notice of petition'."
+
+  - id: petition-contents
+    question: "What information must a landlord's petition contain to start a summary eviction proceeding?"
+    expected_citations: ["RPAPL § 741"]
+    notes: "§ 741 is titled 'Contents of petition'."
+
+  - id: tenant-answer
+    question: "Can a tenant file an answer to a landlord's eviction petition, and what may it include?"
+    expected_citations: ["RPAPL § 743"]
+    notes: "§ 743 is titled 'Answer'."
+
+  - id: trial-procedure
+    question: "What happens at trial in a landlord-tenant summary proceeding?"
+    expected_citations: ["RPAPL § 745"]
+    notes: "§ 745 is titled 'Trial'."
+
+  - id: judgment
+    question: "What does a court's judgment award in a landlord-tenant summary proceeding?"
+    expected_citations: ["RPAPL § 747"]
+    notes: "§ 747 is titled 'Judgment'."
+
+  - id: warrant-of-eviction
+    question: "What is a warrant of eviction, and what is its legal effect once issued?"
+    expected_citations: ["RPAPL § 749"]
+    notes: "§ 749 is titled 'Warrant'."
+
+  - id: stay-by-paying-rent
+    question: "Can a tenant avoid eviction by paying the rent owed or giving an undertaking to the court?"
+    expected_citations: ["RPAPL § 751"]
+    notes: "§ 751 is titled 'Stay upon paying rent or giving undertaking'."
+
+  - id: stay-in-dwelling-premises
+    question: "Can a residential tenant get extra time to remain in their home after losing an eviction case?"
+    expected_citations: ["RPAPL § 753"]
+    notes: "§ 753 is titled 'Stay in premises occupied for dwelling purposes'."
+
+  - id: security-deposit-waiver
+    question: "Can a landlord and tenant agree in their lease that the landlord doesn't have to hold a security deposit in trust as required by law?"
+    expected_citations: ["GOL § 7-103"]
+    notes: >
+      § 7-103 is the general trust-holding requirement (and voids waivers of it); § 7-108's
+      anti-waiver clause covers its own narrower non-rent-stabilized-unit protections (deposit
+      amount cap, refund process, inspection rights), not trust-holding -- an earlier, more
+      generic phrasing of this question ambiguously matched § 7-108 instead.
+
+  - id: landlord-fails-to-return-deposit
+    question: "What happens if a landlord fails to notify a tenant or properly turn over their security deposit?"
+    expected_citations: ["GOL § 7-105"]
+    notes: "GOL § 7-105 covers a landlord failing to turn over/notify about deposits."
+
+  - id: non-rent-stabilized-deposit-rules
+    question: "Do security deposit rules apply differently to tenants in non-rent-stabilized dwelling units?"
+    expected_citations: ["GOL § 7-108"]
+    notes: "GOL § 7-108 is titled 'Deposits made by tenants of non-rent stabilized dwelling units'."
+
+  - id: rent-offset-damages
+    question: "Can a tenant offset rent payments or recover damages when a landlord fails to provide essential services like heat or water?"
+    expected_citations: ["RPL § 235-A"]
+    notes: "RPL § 235-A covers a tenant's right to offset payments and damages in certain cases."
+
+  - id: warranty-of-habitability
+    question: "Does New York law guarantee that a rented home is fit for human habitation?"
+    expected_citations: ["RPL § 235-B"]
+    notes: "RPL § 235-B is the implied warranty of habitability."
+
+  - id: unconscionable-lease-clause
+    question: "Can a New York court refuse to enforce an unconscionable clause in a residential lease?"
+    expected_citations: ["RPL § 235-C"]
+    notes: "RPL § 235-C covers unconscionable leases or lease clauses."
+
+  - id: unrelated-traffic-law
+    question: "What is the maximum speed limit on a New York state highway?"
+    expect_abstain: true
+    expected_citations: []
+    notes: "No traffic-law statute is seeded -- must hard-abstain rather than answer from unrelated statute text."
+
+  - id: unrelated-family-law
+    question: "How do I file for divorce in New York?"
+    expect_abstain: true
+    expected_citations: []
+    notes: "No family-law statute is seeded -- must hard-abstain rather than answer from unrelated statute text."
