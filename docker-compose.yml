@@ -16,6 +16,29 @@ services:
       timeout: 5s
       retries: 10
 
+  # Isolated Postgres for tests/integration (see tests/integration/conftest.py). Separate from
+  # `db` so integration tests never touch dev data, on a different host port (5544) so both can
+  # run at once. Gated behind the `test` profile so `docker compose up` (dev stack) never starts
+  # it. tmpfs data dir: test data is meant to be thrown away, and it's faster than disk.
+  db-test:
+    image: pgvector/pgvector:pg16
+    profiles: ["test"]
+    environment:
+      POSTGRES_USER: openlex_test
+      POSTGRES_DB: openlex_test
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5544:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    volumes:
+      - ./migrations/postgres/0001_init.sql:/docker-entrypoint-initdb.d/0001_init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openlex_test -d openlex_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   api:
     build:
       context: .
