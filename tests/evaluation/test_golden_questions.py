@@ -38,11 +38,37 @@ def _require_live_api() -> None:
         )
 
 
+@pytest.fixture(scope="session")
+def _auth_token(_require_live_api: None) -> str:
+    """POST /query requires a bearer token (see apps/api/src/openlex_api/auth.py). Registers
+    a fixed eval user, tolerating 409 (already registered) so repeat runs against a
+    not-yet-recycled DB don't fail, then logs in for a token."""
+    email = "golden-questions-eval@example.com"
+    password = "eval-harness-not-a-real-password"
+
+    register_response = httpx.post(
+        f"{API_BASE_URL}/auth/register",
+        json={"email": email, "password": password},
+        timeout=10.0,
+    )
+    if register_response.status_code not in (201, 409):
+        register_response.raise_for_status()
+
+    login_response = httpx.post(
+        f"{API_BASE_URL}/auth/login",
+        data={"username": email, "password": password},
+        timeout=10.0,
+    )
+    login_response.raise_for_status()
+    return str(login_response.json()["access_token"])
+
+
 @pytest.mark.parametrize("case", _load_golden_questions(), ids=lambda case: case["id"])
-def test_golden_question(case: dict[str, Any]) -> None:
+def test_golden_question(case: dict[str, Any], _auth_token: str) -> None:
     response = httpx.post(
         f"{API_BASE_URL}/query",
         json={"question": case["question"]},
+        headers={"Authorization": f"Bearer {_auth_token}"},
         timeout=REQUEST_TIMEOUT_SECONDS,
     )
     response.raise_for_status()

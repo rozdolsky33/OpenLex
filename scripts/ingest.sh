@@ -12,4 +12,6 @@ if [ ! -f apps/worker/src/openlex_worker/__main__.py ]; then
   exit 1
 fi
 
-docker compose exec worker uv run --frozen python -m openlex_worker ingest --source "$SOURCE"
+# -T: no pseudo-TTY -- needed so this works under CI (GitHub Actions `run:` steps have no
+# TTY attached) as well as interactively; the ingest command itself takes no stdin either way.
+docker compose exec -T worker uv run --frozen python -m openlex_worker ingest --source "$SOURCE"
