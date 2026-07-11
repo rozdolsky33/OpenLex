@@ -15,10 +15,12 @@ from pathlib import Path
 from typing import Any, cast
 
 import anthropic
-from anthropic.types import ToolChoiceToolParam, ToolParam
+from anthropic.types import MessageParam, ToolChoiceToolParam, ToolParam
 from legal_models.schemas import Citation, QueryResponse
 from legal_retrieval.search import SearchResult
 from openlex_shared.config import settings
+
+from legal_generation.types import ConversationTurn
 
 _PROMPT_PATH = Path(__file__).parents[4] / "ml" / "prompts" / "statute_qa_system.txt"
 _PROMPT_TEMPLATE = _PROMPT_PATH.read_text()
@@ -66,12 +68,23 @@ def _abstain_response() -> QueryResponse:
 async def generate_answer(
     question: str,
     passages: list[SearchResult],
+    history: list[ConversationTurn] | None = None,
     min_passages: int = 1,
 ) -> QueryResponse:
     if len(passages) < min_passages:
         # Empty/insufficient retrieval is a hard abstain -- not a decision delegated to the
-        # model, and Claude is never called at all for this case.
+        # model, and Claude is never called at all for this case. This holds regardless of
+        # history -- conversation context doesn't grant license to answer ungrounded (ADR-0003 §4).
         return _abstain_response()
+
+    # Prior turns replay as plain question/answer text, not their original retrieved passage
+    # blocks, so context doesn't grow unbounded turn over turn (ADR-0003 §4). Only the current
+    # turn's freshly-retrieved passages are included, in the final message, as before.
+    messages_list: list[dict[str, Any]] = []
+    for turn in history or []:
+        messages_list.append({"role": "user", "content": turn.question})
+        messages_list.append({"role": "assistant", "content": turn.answer})
+    messages_list.append({"role": "user", "content": _build_prompt(question, passages)})
 
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     response = await client.messages.create(
@@ -79,7 +92,7 @@ async def generate_answer(
         max_tokens=1024,
         tools=[ANSWER_TOOL],
         tool_choice=ToolChoiceToolParam(type="tool", name="provide_answer"),
-        messages=[{"role": "user", "content": _build_prompt(question, passages)}],
+        messages=cast(list[MessageParam], messages_list),
     )
 
     tool_use = next(block for block in response.content if block.type == "tool_use")
