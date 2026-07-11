@@ -16,6 +16,7 @@ from legal_generation.types import ConversationTurn
 from legal_models.orm import Conversation, Message
 from legal_models.schemas import Citation, QueryResponse
 from legal_retrieval.search import SearchResult
+from sqlalchemy.ext.asyncio import AsyncSession
 
 PASSAGE = SearchResult(
     chunk_id="chunk-1",
@@ -34,8 +35,12 @@ PASSAGE = SearchResult(
 def _mock_session_that_assigns_id_on_flush() -> AsyncMock:
     """A real `session.flush()` assigns Python-side-default ids (like Conversation.id's
     `default=uuid.uuid4`) to newly added, not-yet-flushed rows. Simulate exactly that so
-    _load_conversation's new-conversation branch behaves like it would against a real DB."""
-    session = AsyncMock()
+    _load_conversation's new-conversation branch behaves like it would against a real DB.
+
+    spec=AsyncSession matters here: without it, a bare AsyncMock() treats every attribute
+    (including sync methods like .add()) as async, so a synchronous session.add(x) call
+    returns an un-awaited coroutine and pytest emits a RuntimeWarning for it."""
+    session = AsyncMock(spec=AsyncSession)
     added: list = []
     session.add.side_effect = added.append
 
@@ -69,7 +74,7 @@ async def test_handle_query_turn_creates_a_new_conversation_when_none_given() ->
 
 async def test_handle_query_turn_loads_history_for_an_existing_conversation() -> None:
     conversation_id = uuid.uuid4()
-    session = AsyncMock()
+    session = AsyncMock(spec=AsyncSession)
     session.get.return_value = Conversation(id=conversation_id)
 
     prior_message = Message(
@@ -112,7 +117,7 @@ async def test_handle_query_turn_loads_history_for_an_existing_conversation() ->
 
 
 async def test_handle_query_turn_raises_value_error_for_unknown_conversation_id() -> None:
-    session = AsyncMock()
+    session = AsyncMock(spec=AsyncSession)
     session.get.return_value = None
 
     with pytest.raises(ValueError):
