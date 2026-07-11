@@ -1,0 +1,40 @@
+output "cluster_name" {
+  value = module.eks.cluster_name
+}
+
+output "cluster_endpoint" {
+  value = module.eks.cluster_endpoint
+}
+
+output "cluster_certificate_authority_data" {
+  value     = module.eks.cluster_certificate_authority_data
+  sensitive = true
+}
+
+output "oidc_provider_arn" {
+  value = module.eks.oidc_provider_arn
+}
+
+output "route53_zone_id" {
+  value = aws_route53_zone.demo.zone_id
+}
+
+output "route53_name_servers" {
+  description = "Set these as the NS records for var.domain_name at your registrar"
+  value       = aws_route53_zone.demo.name_servers
+}
+
+output "external_dns_role_arn" {
+  description = "Paste into infra/argocd/apps/eks-demo/app-external-dns.yaml's serviceAccount.annotations"
+  value       = aws_iam_role.external_dns.arn
+}
+
+output "external_secrets_role_arn" {
+  description = "Paste into infra/argocd/apps/eks-demo/app-external-secrets.yaml's serviceAccount.annotations"
+  value       = aws_iam_role.external_secrets.arn
+}
+
+output "ecr_repository_urls" {
+  description = "Paste into infra/kubernetes/overlays/eks-demo/kustomization.yaml's images: newName fields"
+  value       = { for k, v in aws_ecr_repository.this : k => v.repository_url }
+}

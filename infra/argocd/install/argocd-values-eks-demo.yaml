@@ -1,0 +1,39 @@
+# Helm values for `helm upgrade --install argocd argo/argo-cd -n argocd -f this-file`
+# (see scripts/argocd-bootstrap.sh). Sized conservatively — this shares one t4g.medium node
+# with ingress-nginx, cert-manager, external-dns, external-secrets, and the openlex workload
+# (see docs/infrastructure/aws-eks-cost-estimate.md). TLS terminates at ingress-nginx +
+# cert-manager (infra/argocd/apps/eks-demo/argocd-ingress.yaml), so ArgoCD's own server runs
+# in insecure (plain HTTP) mode to avoid double TLS termination — intentional, not an oversight.
+configs:
+  cm:
+    kustomize.buildOptions: "--load-restrictor LoadRestrictionsNone"
+
+server:
+  extraArgs:
+    - --insecure
+  service:
+    type: ClusterIP
+  resources:
+    requests: { cpu: 50m, memory: 96Mi }
+    limits: { cpu: 200m, memory: 192Mi }
+
+repoServer:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { cpu: 300m, memory: 256Mi }
+
+applicationSet:
+  enabled: false
+
+notifications:
+  enabled: false
+
+redis:
+  resources:
+    requests: { cpu: 25m, memory: 48Mi }
+    limits: { cpu: 100m, memory: 96Mi }
+
+controller:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { cpu: 300m, memory: 256Mi }

@@ -12,3 +12,8 @@ dist/
 .DS_Store
 pgdata/
 requirements.audit.txt
+
+# Claude Code harness artifacts (not project files)
+.agents/
+.claude/scheduled_tasks.lock
+skills-lock.json

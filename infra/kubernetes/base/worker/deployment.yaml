@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openlex-worker
+  labels:
+    app.kubernetes.io/name: openlex-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openlex-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openlex-worker
+    spec:
+      serviceAccountName: openlex-worker
+      containers:
+        - name: worker
+          image: openlex-worker:placeholder # set by the images: transformer in each overlay
+          envFrom:
+            - secretRef:
+                name: openlex-secrets
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi

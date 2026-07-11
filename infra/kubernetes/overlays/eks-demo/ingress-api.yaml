@@ -1,0 +1,28 @@
+# Replace <DOMAIN> with the real demo domain (e.g. openlex-demo.example.com) before applying.
+# Start with cluster-issuer: letsencrypt-staging (see infra/argocd/apps/eks-demo/), switch to
+# letsencrypt-prod once the staging issuance succeeds end-to-end (avoids burning Let's
+# Encrypt's production rate limit while debugging HTTP-01 reachability).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openlex-api
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - app.<DOMAIN>
+      secretName: openlex-api-tls
+  rules:
+    - host: app.<DOMAIN>
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: openlex-api
+                port:
+                  name: http

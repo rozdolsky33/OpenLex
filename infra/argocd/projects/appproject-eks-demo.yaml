@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: openlex-eks-demo
+  namespace: argocd
+spec:
+  description: OpenLex workload + platform add-ons on the EKS demo cluster
+  sourceRepos:
+    - https://github.com/rozdolsky33/OpenLex.git
+    # Helm chart sources for platform components (ingress-nginx, cert-manager, external-dns,
+    # external-secrets) — each Application below points at the upstream chart repo directly.
+    - https://kubernetes.github.io/ingress-nginx
+    - https://charts.jetstack.io
+    - https://kubernetes-sigs.github.io/external-dns
+    - https://charts.external-secrets.io
+  destinations:
+    - namespace: "*"
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"

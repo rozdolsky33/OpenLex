@@ -1,0 +1,17 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: openlex-kind
+  namespace: argocd
+spec:
+  description: OpenLex workload on the local kind cluster
+  sourceRepos:
+    - https://github.com/rozdolsky33/OpenLex.git
+  destinations:
+    - namespace: openlex
+      server: https://kubernetes.default.svc
+    - namespace: argocd
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"

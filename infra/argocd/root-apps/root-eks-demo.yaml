@@ -1,0 +1,32 @@
+# The one Application a human applies by hand for eks-demo (via scripts/argocd-bootstrap.sh eks-demo):
+# `kubectl apply -f infra/argocd/projects/appproject-eks-demo.yaml -f infra/argocd/root-apps/root-eks-demo.yaml`
+# Everything else in infra/argocd/apps/eks-demo/ is then reconciled automatically, in sync-wave
+# order (platform controllers -> ingress-nginx -> cluster-scoped config -> the openlex app).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root-eks-demo
+  namespace: argocd
+spec:
+  project: openlex-eks-demo
+  source:
+    repoURL: https://github.com/rozdolsky33/OpenLex.git
+    targetRevision: main
+    path: infra/argocd/apps/eks-demo
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

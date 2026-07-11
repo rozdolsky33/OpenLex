@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: openlex
+
+# web is intentionally excluded (apps/web has no Dockerfile yet, see infra/kubernetes/README.md).
+resources:
+  - ../../base/postgres
+  - ../../base/api
+  - ../../base/worker
+  - externalsecret-openlex.yaml
+  - ingress-api.yaml
+
+# Replace <ECR_ACCOUNT>.dkr.ecr.<REGION>.amazonaws.com with `terraform output ecr_repository_urls`
+# (infra/terraform) after the first apply, and bump the tag on every image push. See
+# infra/kubernetes/README.md and docs/infrastructure/mlops-guide.md's CI-follow-up note —
+# this is manual for the first cut, automated later (Argo Image Updater or a CI tag-bump step).
+images:
+  - name: openlex-api
+    newName: <ECR_ACCOUNT>.dkr.ecr.<REGION>.amazonaws.com/openlex-api
+    newTag: v0.1.0
+  - name: openlex-worker
+    newName: <ECR_ACCOUNT>.dkr.ecr.<REGION>.amazonaws.com/openlex-worker
+    newTag: v0.1.0
+
+patches:
+  - path: patch-resources.yaml

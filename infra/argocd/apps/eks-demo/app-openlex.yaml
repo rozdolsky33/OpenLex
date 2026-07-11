@@ -1,0 +1,24 @@
+# Requires infra/kubernetes/overlays/eks-demo's images: tags pushed to ECR, and the
+# openlex/app AWS Secrets Manager secret to exist, before this reaches Healthy.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openlex
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: openlex-eks-demo
+  source:
+    repoURL: https://github.com/rozdolsky33/OpenLex.git
+    targetRevision: main
+    path: infra/kubernetes/overlays/eks-demo
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openlex
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

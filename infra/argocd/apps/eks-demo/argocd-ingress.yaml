@@ -1,0 +1,29 @@
+# Replace <DOMAIN>. backend port 80 because argocd-values-eks-demo.yaml sets
+# server.extraArgs: [--insecure] — TLS terminates here, not double-terminated at Argo's server.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd-server
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - argocd.<DOMAIN>
+      secretName: argocd-server-tls
+  rules:
+    - host: argocd.<DOMAIN>
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                port:
+                  name: http

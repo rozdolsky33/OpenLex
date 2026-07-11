@@ -1,0 +1,38 @@
+# Replace <ACME_EMAIL> (e.g. rozdolskyvolodymyr@gmail.com). Use letsencrypt-staging first
+# (infra/kubernetes/overlays/eks-demo/ingress-api.yaml and argocd-ingress.yaml both start on
+# staging) to avoid burning Let's Encrypt's production rate limit (5 certs/domain/week) while
+# debugging HTTP-01 reachability; switch the Ingress annotations to letsencrypt-prod once
+# staging issuance succeeds end-to-end.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: "<ACME_EMAIL>"
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: nginx
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: "<ACME_EMAIL>"
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: nginx

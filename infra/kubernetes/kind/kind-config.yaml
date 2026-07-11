@@ -1,0 +1,7 @@
+# No ingress/TLS in kind (see infra/kubernetes/README.md) — access is via
+# `kubectl port-forward`, so no extraPortMappings are needed for that. Kept as a single-node
+# cluster; bump this file if you later opt into the local-ingress path noted in the README.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane

@@ -1,0 +1,36 @@
+# A single t4g.medium (4GB RAM) also hosts ArgoCD + ingress-nginx + cert-manager +
+# external-dns + external-secrets — keep these conservative. See
+# docs/infrastructure/aws-eks-cost-estimate.md and the plan's "gotchas" section.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openlex-api
+spec:
+  template:
+    spec:
+      containers:
+        - name: api
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openlex-worker
+spec:
+  template:
+    spec:
+      containers:
+        - name: worker
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi

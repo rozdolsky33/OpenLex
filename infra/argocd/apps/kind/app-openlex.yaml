@@ -1,0 +1,23 @@
+# Requires infra/kubernetes/overlays/kind's images: tags to already be `kind load`-ed
+# (scripts/kind-up.sh) and the openlex-secrets Secret to already exist
+# (scripts/kind-secrets-bootstrap.sh) before this reaches Healthy.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openlex
+  namespace: argocd
+spec:
+  project: openlex-kind
+  source:
+    repoURL: https://github.com/rozdolsky33/OpenLex.git
+    targetRevision: main
+    path: infra/kubernetes/overlays/kind
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openlex
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

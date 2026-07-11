@@ -1,0 +1,35 @@
+# Helm values for `helm upgrade --install argocd argo/argo-cd -n argocd -f this-file`
+# (see scripts/argocd-bootstrap.sh). Minimal footprint for a laptop kind cluster; ArgoCD keeps
+# its own default TLS (accessed via `kubectl port-forward`, no ingress/cert-manager in kind).
+configs:
+  cm:
+    # infra/kubernetes/base/postgres reuses migrations/postgres/0001_init.sql from outside the
+    # kustomization directory tree — Kustomize's default load restrictor blocks that unless
+    # told otherwise. See infra/kubernetes/base/postgres/kustomization.yaml.
+    kustomize.buildOptions: "--load-restrictor LoadRestrictionsNone"
+
+server:
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits: { cpu: 100m, memory: 128Mi }
+
+repoServer:
+  resources:
+    requests: { cpu: 25m, memory: 128Mi }
+    limits: { cpu: 200m, memory: 256Mi }
+
+applicationSet:
+  enabled: false
+
+notifications:
+  enabled: false
+
+redis:
+  resources:
+    requests: { cpu: 10m, memory: 32Mi }
+    limits: { cpu: 100m, memory: 64Mi }
+
+controller:
+  resources:
+    requests: { cpu: 25m, memory: 128Mi }
+    limits: { cpu: 200m, memory: 256Mi }

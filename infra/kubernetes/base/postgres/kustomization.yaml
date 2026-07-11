@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - statefulset.yaml
+  - service.yaml
+
+# Reuses the same schema file docker-compose.yml already mounts at
+# /docker-entrypoint-initdb.d — no duplicated SQL. Kustomize's default load restrictor refuses
+# to read generator files from outside the kustomization directory tree, so building this
+# (directly, or transitively via an overlay) requires `--load-restrictor LoadRestrictionsNone`
+# (`kubectl kustomize --load-restrictor=LoadRestrictionsNone ...` /
+# `kustomize build --load-restrictor LoadRestrictionsNone ...`). ArgoCD is configured for this
+# repo-wide via `kustomize.buildOptions` in infra/argocd/install/argocd-values-*.yaml, so this
+# only matters for manual/local `kustomize build` validation. Hash-suffixed by default, so
+# editing the real file produces a new ConfigMap name and rolls the StatefulSet. Note: this
+# only re-runs against an *empty* PGDATA (Postgres image behavior) — it does not re-seed an
+# already-initialized volume.
+configMapGenerator:
+  - name: postgres-init-sql
+    files:
+      - 0001_init.sql=../../../../migrations/postgres/0001_init.sql

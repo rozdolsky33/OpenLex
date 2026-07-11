@@ -1,0 +1,32 @@
+# Scaffolded ahead of apps/web actually existing (no Dockerfile/package.json yet — see
+# CLAUDE.md "Current state"). Not referenced by any overlay today; wire it in once apps/web
+# is buildable.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openlex-web
+  labels:
+    app.kubernetes.io/name: openlex-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openlex-web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: openlex-web
+    spec:
+      containers:
+        - name: web
+          image: openlex-web:placeholder
+          ports:
+            - containerPort: 80
+              name: http
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
