@@ -17,6 +17,15 @@ dependencies = [
 [tool.uv.sources]
 legal-models = { workspace = true }
 openlex-shared = { workspace = true }
+# CPU-only build: embeddings run in-process on CPU (see ml/model_cards/bge-small-en-v1.5.md),
+# no GPU anywhere in this project. Without this, uv resolves the default CUDA-enabled torch
+# build on Linux, pulling multi-GB nvidia-* wheels that exhaust CI runner disk space.
+torch = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/legal_retrieval"]
