@@ -13,6 +13,9 @@ dependencies = [
     "legal-retrieval",
     "legal-generation",
     "openlex-shared",
+    "bcrypt>=5.0.0",
+    "pyjwt>=2.13.0",
+    "python-multipart>=0.0.32",
 ]
 
 [tool.uv.sources]

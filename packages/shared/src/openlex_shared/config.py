@@ -16,5 +16,9 @@ class Settings(BaseSettings):
 
     cors_allow_origins: list[str] = ["http://localhost:5173"]
 
+    jwt_secret_key: str
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60
+
 
 settings = Settings()  # type: ignore[call-arg]  # pydantic-settings fills these from .env at runtime

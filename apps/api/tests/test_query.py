@@ -5,18 +5,33 @@ site so these tests exercise only routing/validation/error-mapping -- no real DB
 model, reformulation, or Claude call. See
 packages/legal_generation/tests/test_conversation.py for orchestration-level tests of
 handle_query_turn itself.
+
+The auth dependency is overridden with a fake user so these tests don't need a real JWT --
+see test_auth.py for auth-specific coverage, and test_query_requires_authentication below for
+the one case that deliberately leaves auth un-overridden.
 """
 
+import uuid
+from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 from legal_generation.conversation import ConversationNotFound
+from legal_models.orm import User
 from legal_models.schemas import Citation, QueryResponse
+from openlex_api.auth import get_current_user
 from openlex_api.main import app
 from openlex_shared.db import get_session
 
 client = TestClient(app)
+
+FAKE_USER = User(
+    id=uuid.uuid4(),
+    email="tenant@example.com",
+    password_hash="unused",
+    created_at=datetime.now(),
+)
 
 
 @pytest.fixture(autouse=True)
@@ -25,6 +40,7 @@ def _mock_db_session():
         yield AsyncMock()
 
     app.dependency_overrides[get_session] = _get_session
+    app.dependency_overrides[get_current_user] = lambda: FAKE_USER
     yield
     app.dependency_overrides.clear()
 
@@ -94,3 +110,9 @@ def test_query_rejects_invalid_doc_type() -> None:
         "/query", json={"question": "what is a tenant?", "doc_type": "not-a-real-type"}
     )
     assert response.status_code == 422
+
+
+def test_query_requires_authentication() -> None:
+    del app.dependency_overrides[get_current_user]
+    response = client.post("/query", json={"question": "what is a tenant?"})
+    assert response.status_code == 401

@@ -1,6 +1,8 @@
+import uuid
+from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 
 
 class QueryRequest(BaseModel):
@@ -51,3 +53,19 @@ class HealthResponse(BaseModel):
     status: str
     db: bool
     embedding_model_loaded: bool
+
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8)
+
+
+class UserPublic(BaseModel):
+    id: uuid.UUID
+    email: EmailStr
+    created_at: datetime
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"

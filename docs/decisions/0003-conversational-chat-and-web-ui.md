@@ -50,8 +50,10 @@ history itself.
 
 ### 2. Conversation persistence: server-side Postgres, not client-only
 
-New tables (`migrations/postgres/0002_conversations.sql`, mirroring the existing
-`documents`/`chunks` UUID + FK + cascade pattern):
+New tables (`migrations/postgres/0003_conversations.sql` — numbered 0003, not 0002 as
+originally planned, since a concurrently-merged JWT auth PR claimed `0002_users.sql` first;
+renumbered during merge conflict resolution to keep migration ordering unambiguous. Mirrors
+the existing `documents`/`chunks` UUID + FK + cascade pattern):
 
 ```sql
 CREATE TABLE conversations (
@@ -136,13 +138,22 @@ config belongs in `openlex_shared.config.Settings`.
 
 ## Consequences
 
-- No auth exists yet, so `conversation_id` (an unguessable UUID) is effectively a
-  bearer-token-style shared secret — anyone holding the id can read/continue that
-  conversation. This is an accepted, explicit limitation of this ADR, not something it solves.
-- `migrations/postgres/0002_conversations.sql` is the second real schema migration — the
-  trigger point ADR-0001 anticipated ("no Alembic yet ... revisit when a second migration is
-  needed"). This ADR still applies it as a plain SQL file, consistent with that earlier
-  decision; moving to Alembic remains a separate future decision.
+- JWT authentication landed on `main` concurrently with this branch (`POST /query` now
+  requires a valid bearer token, see `apps/api/src/openlex_api/auth.py`). This ADR was written
+  and this feature was designed assuming no auth existed; `conversation_id` is still not
+  scoped per-user, so any authenticated caller holding a conversation_id can continue it —
+  the "unguessable UUID as shared secret" limitation below still applies, just now behind an
+  auth gate rather than being fully anonymous. Scoping conversations to users is a follow-up,
+  not part of this ADR.
+- `conversation_id` (an unguessable UUID) is effectively a bearer-token-style shared secret —
+  anyone holding the id can read/continue that conversation, auth gate notwithstanding. This
+  is an accepted, explicit limitation of this ADR, not something it solves.
+- `migrations/postgres/0003_conversations.sql` is the third real schema migration (numbered
+  0003, not 0002 as originally planned — see §2) — a trigger point ADR-0001 anticipated ("no
+  Alembic yet ... revisit when a second migration is needed"), reached even sooner than
+  expected since `0002_users.sql` (JWT auth) landed first. This ADR still applies it as a
+  plain SQL file, consistent with that earlier decision; moving to Alembic remains a separate
+  future decision.
 - Reformulation adds one Claude call per multi-turn message (not turn 0) — added latency and
   cost per follow-up question, deliberately bounded by the fail-open behavior in §3.
 - History replay in `generate_answer` uses summarized question/answer text only, not full
