@@ -1,0 +1,20 @@
+[
+  {"lawId": "RPA", "citationAbbrev": "RPAPL", "locationId": "701"},
+  {"lawId": "RPA", "citationAbbrev": "RPAPL", "locationId": "711"},
+  {"lawId": "RPA", "citationAbbrev": "RPAPL", "locationId": "713"},
+  {"lawId": "RPA", "citationAbbrev": "RPAPL", "locationId": "715"},
+  {"lawId": "RPA", "citationAbbrev": "RPAPL", "locationId": "731"},
+  {"lawId": "RPA", "citationAbbrev": "RPAPL", "locationId": "741"},
+  {"lawId": "RPA", "citationAbbrev": "RPAPL", "locationId": "743"},
+  {"lawId": "RPA", "citationAbbrev": "RPAPL", "locationId": "745"},
+  {"lawId": "RPA", "citationAbbrev": "RPAPL", "locationId": "747"},
+  {"lawId": "RPA", "citationAbbrev": "RPAPL", "locationId": "749"},
+  {"lawId": "RPA", "citationAbbrev": "RPAPL", "locationId": "751"},
+  {"lawId": "RPA", "citationAbbrev": "RPAPL", "locationId": "753"},
+  {"lawId": "GOB", "citationAbbrev": "GOL", "locationId": "7-103"},
+  {"lawId": "GOB", "citationAbbrev": "GOL", "locationId": "7-105"},
+  {"lawId": "GOB", "citationAbbrev": "GOL", "locationId": "7-108"},
+  {"lawId": "RPP", "citationAbbrev": "RPL", "locationId": "235-A"},
+  {"lawId": "RPP", "citationAbbrev": "RPL", "locationId": "235-B"},
+  {"lawId": "RPP", "citationAbbrev": "RPL", "locationId": "235-C"}
+]

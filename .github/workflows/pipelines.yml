@@ -1,0 +1,23 @@
+name: pipelines
+
+on:
+  pull_request:
+    paths:
+      - "pipelines/**"
+      - "apps/worker/**"
+      - "packages/legal_parsing/**"
+      - "packages/legal_models/**"
+      - "packages/shared/**"
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --package openlex-worker
+      - run: uv run ruff check pipelines apps/worker packages/legal_parsing packages/legal_models packages/shared
+      - run: uv run mypy pipelines apps/worker/src packages/legal_parsing packages/legal_models packages/shared
+      - run: uv run --package openlex-worker pytest apps/worker/tests packages/legal_parsing packages/legal_models packages/shared -v

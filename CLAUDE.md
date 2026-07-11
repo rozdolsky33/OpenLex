@@ -1,0 +1,117 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project overview
+
+OpenLex is a retrieval-augmented legal *research* assistant (POC) scoped to New York
+landlord-tenant law. It retrieves statute and case-law passages and asks Claude to answer
+**only** from that retrieved context, with citations. This is legal information, not legal
+advice — every response must carry the disclaimer defined in `legal_models.schemas`
+(`DISCLAIMER`).
+
+The repo is a **monorepo, modular monolith** (`apps/` + `packages/` + `pipelines/`, one `uv`
+workspace) — see `docs/decisions/0001-monorepo-restructure.md` for the full rationale and a
+mapping of where the old `backend/`/`frontend/` code moved to.
+
+## Current state (important)
+
+This is an early-stage project. Config, DB schema/models, response schemas, and the statute
+ingestion client exist and are wired into the new monorepo layout; most of the actual
+application code does **not** exist yet:
+
+- No `apps/api/src/openlex_api/main.py` (FastAPI entrypoint) — `apps/api/Dockerfile`'s CMD
+  (`uvicorn openlex_api.main:app`) will not currently run.
+- `apps/api/src/openlex_api/routers/`, `packages/legal_retrieval/`,
+  `packages/legal_generation/`, `packages/legal_parsing/` are empty packages (just
+  `__init__.py`) — no endpoints, hybrid retrieval, grounded generation, or chunking code yet.
+- No `apps/worker/src/openlex_worker/__main__.py` — the worker container's CMD
+  (`python -m openlex_worker`) will not currently run. `scripts/ingest.sh` checks for this
+  file and exits with a clear message if it's missing rather than failing opaquely.
+- No case-law ingestion code or `pipelines/ingestion/ny_case_law/seed_cases.json` (statute
+  ingestion via `pipelines/ingestion/ny_legislation/client.py` + `seed_statutes.json` does
+  exist).
+- `apps/web/` has only empty `src/api/` and `src/components/` directories — no
+  `package.json`, no Vite/React setup, no actual UI code yet.
+- `tests/evaluation/` exists but has no `golden_questions.yaml` yet.
+
+Before assuming a module/endpoint/script exists, check for it — don't rely on the README's or
+this file's description of the target architecture as current fact.
+
+## Commands
+
+```bash
+uv sync --all-packages          # install the full workspace (all apps + packages)
+uv run ruff check .             # lint
+uv run ruff format .            # format
+uv run mypy apps packages       # typecheck
+uv run pytest                   # run all tests (root pyproject.toml sets testpaths)
+uv run --package openlex-api pytest apps/api/tests   # run one package/app's tests only
+```
+
+```bash
+scripts/bootstrap.sh            # first-time setup: .env, uv sync, docker compose up --build
+docker compose up --build
+scripts/ingest.sh all           # run ingestion (guarded — see "Current state" above)
+scripts/evaluate.sh             # run the golden-question eval harness (guarded)
+scripts/seed-local-db.sh        # re-apply migrations/postgres/0001_init.sql manually
+```
+
+- API: http://localhost:8000 (docs at `/docs`)
+- Web UI: http://localhost:5173
+- Postgres/pgvector: localhost:5432 (user/pass/db: `openlex`/`openlex`/`openlex`)
+
+Each app/package has its own `pyproject.toml`; the root `pyproject.toml` defines the `uv`
+workspace plus shared `ruff`/`mypy`/`pytest` config. Add a new dependency to a specific
+package with `uv add --package <name> <dependency>`, not by hand-editing lockfiles.
+
+## Architecture
+
+**Data model** (`migrations/postgres/0001_init.sql`, mirrored in
+`packages/legal_models/src/legal_models/orm.py`):
+- `documents` — one row per source document (statute section or case), keyed by
+  `(source, source_id, version)`. `raw_snapshot` (JSONB) holds the immutable raw fetched/seed
+  content; `citation` is the human-readable legal citation shown to users (independent of the
+  source API's internal IDs — see below).
+- `chunks` — chunked passages of a document, each with a 384-dim `embedding` vector (must
+  match `EMBEDDING_MODEL_NAME`'s output dimension — currently `BAAI/bge-small-en-v1.5`, see
+  `ml/model_cards/bge-small-en-v1.5.md`) and a generated `tsv` column for Postgres full-text
+  search. Retrieval is designed to be **hybrid**: pgvector cosine similarity
+  (`idx_chunks_embedding`, HNSW) + Postgres FTS (`idx_chunks_tsv`, GIN), combined at query
+  time (not yet implemented in `packages/legal_retrieval/`).
+- JSON Schema exports of the API-facing shapes live in `schemas/` — `legal_citation` and
+  `answer` are generated directly from `legal_models.schemas` (keep in sync when those
+  models change); `legal_document` and `retrieval_result` are hand-authored pending real
+  pydantic models for them.
+
+**Config** (`packages/shared/src/openlex_shared/config.py`): a single pydantic-settings
+`Settings` object loaded from `.env`. Never hardcode config that belongs there (API keys,
+model names, DB URL). DB sessions come from `openlex_shared.db.get_session`.
+
+**NY Open Legislation ingestion** (`pipelines/ingestion/ny_legislation/client.py`): the API's
+internal `lawId` codes do not match common legal citation abbreviations — e.g. RPAPL is
+`lawId "RPA"`, RPL is `"RPP"`, GOL is `"GOB"`. `seed_statutes.json` lists each statute section
+to fetch as `{lawId, locationId, citationAbbrev}`; `citationAbbrev` is threaded through
+explicitly so the citation shown to users doesn't depend on the API's internal id. Fetches are
+throttled sequentially (`_REQUEST_DELAY_SECONDS`) to be polite to the free public API.
+
+Case law has no public API (NY Official Reports blocks automated fetches), so case-law data is
+meant to come from a hand-curated seed file (`pipelines/ingestion/ny_case_law/seed_cases.json`,
+not yet created) rather than being scraped live.
+
+`pipelines/` modules aren't an installed package — they're plain directories (Python implicit
+namespace packages) imported by `apps/worker` at runtime relative to the repo root. Run them
+via `uv run` from the repo root (or inside the `worker` container, which mounts the whole repo
+at `/repo`), not as a standalone installed dependency.
+
+**Response contract** (`packages/legal_models/src/legal_models/schemas.py`): `QueryResponse`
+always includes `citations`, an `abstained` flag (for when retrieval doesn't support an
+answer), and the fixed legal `disclaimer` string — these are the shape any future
+`/query`-style endpoint must return. See the `grounded-answer-contract` skill.
+
+## Project skills & agents
+
+`.claude/agents/` and `.claude/skills/` hold project-specific context beyond this file:
+- Agents: `backend-implementer` (building out `apps/api`'s routers/`packages/legal_retrieval`/
+  `packages/legal_generation`), `data-ingestion` (statute/case-law ingestion pipeline).
+- Skills: `openlex-data-model`, `ny-open-legislation-api`, `grounded-answer-contract`.

@@ -1,0 +1,16 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "legal-models"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.10.4",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "pgvector>=0.3.6",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/legal_models"]

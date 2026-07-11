@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openlex.dev/schemas/legal_citation.schema.json",
+  "title": "LegalCitation",
+  "description": "A single cited source passage backing an answer. Generated from legal_models.schemas.Citation \u2014 keep in sync.",
+  "properties": {
+    "citation": {
+      "title": "Citation",
+      "type": "string"
+    },
+    "doc_type": {
+      "title": "Doc Type",
+      "type": "string"
+    },
+    "title": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Title"
+    },
+    "court": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Court"
+    },
+    "date": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Date"
+    },
+    "url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Url"
+    },
+    "snippet": {
+      "title": "Snippet",
+      "type": "string"
+    }
+  },
+  "required": [
+    "citation",
+    "doc_type",
+    "snippet"
+  ],
+  "type": "object"
+}

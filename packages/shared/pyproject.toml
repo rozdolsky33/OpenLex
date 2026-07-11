@@ -1,0 +1,16 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "openlex-shared"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic-settings>=2.7.1",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/openlex_shared"]

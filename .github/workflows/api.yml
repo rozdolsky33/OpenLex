@@ -1,0 +1,24 @@
+name: api
+
+on:
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - "packages/**"
+      - "schemas/**"
+      - "pyproject.toml"
+      - "uv.lock"
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --package openlex-api
+      - run: uv run ruff check apps/api packages
+      - run: uv run ruff format --check apps/api packages
+      - run: uv run mypy apps/api/src packages
+      - run: uv run --package openlex-api pytest apps/api/tests packages -v

@@ -1,0 +1,34 @@
+name: evaluation
+
+on:
+  pull_request:
+    paths:
+      - "packages/legal_retrieval/**"
+      - "packages/legal_generation/**"
+      - "ml/prompts/**"
+      - "pipelines/chunking/**"
+      - "tests/evaluation/**"
+
+jobs:
+  golden-questions:
+    runs-on: ubuntu-latest
+    # Slower legal-accuracy evaluation — only runs when retrieval/generation/prompts change,
+    # and only once tests/evaluation/golden_questions.yaml actually exists.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Check golden question set exists
+        id: golden
+        run: |
+          if [ -f tests/evaluation/golden_questions.yaml ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::tests/evaluation/golden_questions.yaml doesn't exist yet — skipping."
+          fi
+      - if: steps.golden.outputs.exists == 'true'
+        run: uv sync --package openlex-api
+      - if: steps.golden.outputs.exists == 'true'
+        run: uv run --package openlex-api pytest tests/evaluation -v

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openlex.dev/schemas/legal_document.schema.json",
+  "title": "LegalDocument",
+  "description": "A single ingested source document (statute section or case). Hand-authored to mirror the `documents` table (migrations/postgres/0001_init.sql) and legal_models.orm.Document — there is no pydantic equivalent yet to generate this from, so keep both in sync manually until one exists.",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "source": {
+      "type": "string",
+      "description": "e.g. 'ny_open_legislation' | 'ny_official_reports_seed'"
+    },
+    "doc_type": { "type": "string", "enum": ["statute", "case"] },
+    "jurisdiction": { "type": "string", "default": "NY" },
+    "citation": {
+      "type": "string",
+      "description": "Human-readable legal citation, e.g. 'RPAPL § 711'. Independent of the source API's internal id."
+    },
+    "title": { "type": ["string", "null"] },
+    "source_id": {
+      "type": "string",
+      "description": "lawId+locationId for statutes, or the seed case key for cases."
+    },
+    "effective_date": { "type": ["string", "null"], "format": "date" },
+    "decision_date": { "type": ["string", "null"], "format": "date" },
+    "court": { "type": ["string", "null"] },
+    "version": {
+      "type": "integer",
+      "default": 1,
+      "description": "Incremented on re-ingestion of a changed document. raw_snapshot is never mutated in place."
+    },
+    "raw_snapshot": {
+      "type": "object",
+      "description": "Immutable raw fetched/seed payload for this document version."
+    },
+    "url": { "type": ["string", "null"], "format": "uri" },
+    "ingested_at": { "type": "string", "format": "date-time" }
+  },
+  "required": ["id", "source", "doc_type", "jurisdiction", "citation", "source_id", "version", "raw_snapshot", "ingested_at"]
+}

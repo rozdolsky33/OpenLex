@@ -1,0 +1,38 @@
+name: web
+
+on:
+  pull_request:
+    paths:
+      - "apps/web/**"
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    # apps/web isn't scaffolded yet (no package.json) — this job is a no-op until it is,
+    # rather than failing on every unrelated PR that happens to touch this path filter.
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check frontend is scaffolded
+        id: scaffolded
+        run: |
+          if [ -f apps/web/package.json ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::apps/web/package.json doesn't exist yet — skipping."
+          fi
+      - uses: actions/setup-node@v4
+        if: steps.scaffolded.outputs.exists == 'true'
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - if: steps.scaffolded.outputs.exists == 'true'
+        working-directory: apps/web
+        run: npm ci
+      - if: steps.scaffolded.outputs.exists == 'true'
+        working-directory: apps/web
+        run: npm run lint
+      - if: steps.scaffolded.outputs.exists == 'true'
+        working-directory: apps/web
+        run: npm test

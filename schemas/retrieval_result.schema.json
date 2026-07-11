@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openlex.dev/schemas/retrieval_result.schema.json",
+  "title": "RetrievalResult",
+  "description": "A single scored chunk returned by packages/legal_retrieval's hybrid search, before it becomes a Citation in an Answer. Not yet implemented in code (app/retrieval/ is empty) — this is the target shape; update it to match once legal_retrieval exists, and prefer generating it from a real pydantic model at that point instead of hand-authoring.",
+  "type": "object",
+  "properties": {
+    "chunk_id": { "type": "string", "format": "uuid" },
+    "document_id": { "type": "string", "format": "uuid" },
+    "citation": { "type": "string", "description": "Mirrors documents.citation for the parent document." },
+    "doc_type": { "type": "string", "enum": ["statute", "case"] },
+    "heading_path": { "type": ["string", "null"] },
+    "text": { "type": "string" },
+    "vector_score": {
+      "type": ["number", "null"],
+      "description": "Cosine similarity from the pgvector HNSW search leg, null if this result only matched full-text."
+    },
+    "fts_score": {
+      "type": ["number", "null"],
+      "description": "ts_rank/ts_rank_cd from the Postgres FTS leg, null if this result only matched vector search."
+    },
+    "fused_score": {
+      "type": "number",
+      "description": "Combined hybrid score (e.g. reciprocal rank fusion) used for final ranking."
+    }
+  },
+  "required": ["chunk_id", "document_id", "citation", "doc_type", "text", "fused_score"]
+}

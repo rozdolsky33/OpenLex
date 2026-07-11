@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "legal-retrieval"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "legal-models",
+    "openlex-shared",
+    "sqlalchemy[asyncio]>=2.0.36",
+]
+
+[tool.uv.sources]
+legal-models = { workspace = true }
+openlex-shared = { workspace = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/legal_retrieval"]
