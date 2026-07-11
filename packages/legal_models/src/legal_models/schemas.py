@@ -9,6 +9,7 @@ class QueryRequest(BaseModel):
     question: str
     doc_type: Literal["statute", "case"] | None = None
     top_k: int = 8
+    conversation_id: str | None = None
 
 
 class Citation(BaseModel):
@@ -33,6 +34,7 @@ class QueryResponse(BaseModel):
     citations: list[Citation]
     abstained: bool
     disclaimer: str = DISCLAIMER
+    conversation_id: str | None = None
 
 
 class IngestRequest(BaseModel):

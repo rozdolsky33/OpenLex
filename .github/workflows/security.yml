@@ -11,13 +11,26 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
-      - run: uv export --all-packages --no-dev --format requirements-txt > requirements.audit.txt
+      # --no-emit-workspace: pip-audit scans third-party dependencies for known CVEs, not our
+      # own first-party code -- and local workspace packages can't be hash-verified anyway
+      # (pip refuses to `--require-hashes` a directory), which broke this job entirely before.
+      - run: uv export --all-packages --no-dev --no-emit-workspace --format requirements-txt > requirements.audit.txt
+      # torch is pinned to the CPU-only build (packages/legal_retrieval/pyproject.toml), which
+      # only exists on PyTorch's own wheel index, not default PyPI -- pip-audit's installer
+      # needs to know to look there too, or it can't resolve `torch==...+cpu` at all.
       - uses: pypa/gh-action-pip-audit@v1.1.0
         with:
           inputs: requirements.audit.txt
+          extra-index-urls: https://download.pytorch.org/whl/cpu
 
   secret-scan:
     runs-on: ubuntu-latest
+    # gitleaks-action calls the GitHub API to list the PR's commits for its diff scan; the
+    # default GITHUB_TOKEN is read-only on contents only unless pull-requests read is granted
+    # explicitly, which was causing a 403 "Resource not accessible by integration".
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:

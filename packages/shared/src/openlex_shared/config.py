@@ -14,6 +14,8 @@ class Settings(BaseSettings):
 
     embedding_model_name: str = "BAAI/bge-small-en-v1.5"
 
+    cors_allow_origins: list[str] = ["http://localhost:5173"]
+
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60

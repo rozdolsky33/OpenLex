@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from legal_generation.generator import generate_answer
+from legal_generation.types import ConversationTurn
 from legal_retrieval.search import SearchResult
 
 PASSAGE = SearchResult(
@@ -97,3 +98,42 @@ async def test_generate_answer_disclaimer_is_always_the_fixed_constant() -> None
         response = await generate_answer("what is the capital of France?", passages=[])
 
     assert response.disclaimer == DISCLAIMER
+
+
+async def test_generate_answer_replays_history_as_plain_alternating_messages() -> None:
+    mock_client = AsyncMock()
+    mock_client.messages.create.return_value = _mock_tool_response(
+        {
+            "abstained": False,
+            "answer": "Pets are allowed, subject to...",
+            "used_chunk_ids": ["chunk-1"],
+        }
+    )
+    history = [ConversationTurn(question="what is a tenant?", answer="A tenant is defined as...")]
+
+    with patch("legal_generation.generator.anthropic.AsyncAnthropic", return_value=mock_client):
+        await generate_answer("what about pets?", passages=[PASSAGE], history=history)
+
+    sent_messages = mock_client.messages.create.call_args.kwargs["messages"]
+    assert sent_messages[0] == {"role": "user", "content": "what is a tenant?"}
+    assert sent_messages[1] == {"role": "assistant", "content": "A tenant is defined as..."}
+    assert sent_messages[2]["role"] == "user"
+    assert "what about pets?" in sent_messages[2]["content"]
+
+
+async def test_generate_answer_without_history_sends_a_single_message_as_before() -> None:
+    mock_client = AsyncMock()
+    mock_client.messages.create.return_value = _mock_tool_response(
+        {
+            "abstained": False,
+            "answer": "A tenant is defined as...",
+            "used_chunk_ids": ["chunk-1"],
+        }
+    )
+
+    with patch("legal_generation.generator.anthropic.AsyncAnthropic", return_value=mock_client):
+        await generate_answer("what is a tenant?", passages=[PASSAGE])
+
+    sent_messages = mock_client.messages.create.call_args.kwargs["messages"]
+    assert len(sent_messages) == 1
+    assert sent_messages[0]["role"] == "user"

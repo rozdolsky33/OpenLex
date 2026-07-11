@@ -12,12 +12,23 @@ on:
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
+    # openlex_shared.config.Settings requires these three at import time (no .env file exists
+    # in CI). Only apps/api/tests + packages/*/tests run here -- all mock external calls, so
+    # dummy values are correct here; never used for a real Claude call or DB connection.
+    env:
+      ANTHROPIC_API_KEY: ci-placeholder
+      DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
+      JWT_SECRET_KEY: ci-placeholder-not-a-real-secret-32chars
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
-      - run: uv sync --package openlex-api
+      # --all-packages, not --package openlex-api: a package-scoped sync only installs that
+      # package's own dependency closure, which excludes both the dev group (ruff/mypy/pytest)
+      # and workspace members it doesn't itself depend on (e.g. legal_parsing) -- but this job
+      # lints/tests all of `packages/`, not just openlex-api's own dependencies.
+      - run: uv sync --all-packages
       - run: uv run ruff check apps/api packages
       - run: uv run ruff format --check apps/api packages
       - run: uv run mypy apps/api/src packages

@@ -1,21 +1,25 @@
 """Tests for POST /query (apps/api/src/openlex_api/routers/query.py).
 
-hybrid_search and generate_answer are patched at the router module's import site so these
-tests exercise only routing/validation/wiring -- no real DB, embedding model, or Claude call.
+handle_query_turn (legal_generation.conversation) is patched at the router module's import
+site so these tests exercise only routing/validation/error-mapping -- no real DB, embedding
+model, reformulation, or Claude call. See
+packages/legal_generation/tests/test_conversation.py for orchestration-level tests of
+handle_query_turn itself.
+
 The auth dependency is overridden with a fake user so these tests don't need a real JWT --
 see test_auth.py for auth-specific coverage, and test_query_requires_authentication below for
 the one case that deliberately leaves auth un-overridden.
 """
 
 import uuid
-from datetime import date, datetime
+from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from legal_generation.conversation import ConversationNotFound
 from legal_models.orm import User
 from legal_models.schemas import Citation, QueryResponse
-from legal_retrieval.search import SearchResult
 from openlex_api.auth import get_current_user
 from openlex_api.main import app
 from openlex_shared.db import get_session
@@ -27,19 +31,6 @@ FAKE_USER = User(
     email="tenant@example.com",
     password_hash="unused",
     created_at=datetime.now(),
-)
-
-PASSAGE = SearchResult(
-    chunk_id="chunk-1",
-    document_id="doc-1",
-    text="A tenant shall include an occupant...",
-    citation="RPAPL § 711",
-    doc_type="statute",
-    title="Grounds where landlord-tenant relationship exists",
-    court=None,
-    effective_date=date(2024, 12, 13),
-    url="https://legislation.nysenate.gov/api/3/laws/RPA/711",
-    score=0.9,
 )
 
 
@@ -61,11 +52,9 @@ def test_query_returns_the_generated_answer_verbatim() -> None:
             Citation(citation="RPAPL § 711", doc_type="statute", snippet="A tenant shall...")
         ],
         abstained=False,
+        conversation_id="11111111-1111-1111-1111-111111111111",
     )
-    with (
-        patch("openlex_api.routers.query.hybrid_search", AsyncMock(return_value=[PASSAGE])),
-        patch("openlex_api.routers.query.generate_answer", AsyncMock(return_value=expected)),
-    ):
+    with patch("openlex_api.routers.query.handle_query_turn", AsyncMock(return_value=expected)):
         response = client.post("/query", json={"question": "what is a tenant?"})
 
     assert response.status_code == 200
@@ -74,38 +63,41 @@ def test_query_returns_the_generated_answer_verbatim() -> None:
     assert body["abstained"] is False
     assert body["citations"][0]["citation"] == "RPAPL § 711"
     assert body["disclaimer"] == expected.disclaimer
+    assert body["conversation_id"] == expected.conversation_id
 
 
-def test_query_passes_question_top_k_and_doc_type_through_to_search() -> None:
-    mock_search = AsyncMock(return_value=[])
-    mock_generate = AsyncMock(return_value=QueryResponse(answer="", citations=[], abstained=True))
-    with (
-        patch("openlex_api.routers.query.hybrid_search", mock_search),
-        patch("openlex_api.routers.query.generate_answer", mock_generate),
-    ):
+def test_query_passes_question_conversation_id_top_k_and_doc_type_through() -> None:
+    mock_handle = AsyncMock(
+        return_value=QueryResponse(answer="", citations=[], abstained=True, conversation_id="abc")
+    )
+    with patch("openlex_api.routers.query.handle_query_turn", mock_handle):
         response = client.post(
             "/query",
-            json={"question": "how much notice?", "top_k": 3, "doc_type": "statute"},
+            json={
+                "question": "how much notice?",
+                "top_k": 3,
+                "doc_type": "statute",
+                "conversation_id": "abc",
+            },
         )
 
     assert response.status_code == 200
-    mock_search.assert_awaited_once()
-    call_args, call_kwargs = mock_search.call_args
+    mock_handle.assert_awaited_once()
+    call_args, call_kwargs = mock_handle.call_args
     assert call_args[1] == "how much notice?"
-    assert call_kwargs == {"top_k": 3, "doc_type": "statute"}
+    assert call_kwargs == {"conversation_id": "abc", "top_k": 3, "doc_type": "statute"}
 
 
-def test_query_passes_search_results_and_question_through_to_generation() -> None:
-    mock_generate = AsyncMock(
-        return_value=QueryResponse(answer="ok", citations=[], abstained=False)
-    )
-    with (
-        patch("openlex_api.routers.query.hybrid_search", AsyncMock(return_value=[PASSAGE])),
-        patch("openlex_api.routers.query.generate_answer", mock_generate),
+def test_query_returns_404_when_conversation_id_is_unknown() -> None:
+    with patch(
+        "openlex_api.routers.query.handle_query_turn",
+        AsyncMock(side_effect=ConversationNotFound("conversation abc not found")),
     ):
-        client.post("/query", json={"question": "what is a tenant?"})
+        response = client.post(
+            "/query", json={"question": "what about pets?", "conversation_id": "abc"}
+        )
 
-    mock_generate.assert_awaited_once_with("what is a tenant?", [PASSAGE])
+    assert response.status_code == 404
 
 
 def test_query_rejects_missing_question() -> None:

@@ -18,6 +18,7 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "httpx>=0.28.1",
     "pyyaml>=6.0.3",
+    "jinja2>=3.1.6",
 ]
 
 [tool.ruff]
@@ -39,6 +40,12 @@ python_version = "3.11"
 ignore_missing_imports = true
 warn_unused_ignores = true
 exclude = ["tests/fixtures"]
+# pipelines/ is a plain namespace-package directory (no top-level __init__.py -- see
+# CLAUDE.md), while a nested dir like pipelines/ingestion/ny_legislation/ does have one.
+# Passing multiple root paths (e.g. `pipelines apps/worker/src ...`) in one invocation makes
+# mypy infer ambiguous package bases for files like that without this flag ("Source file
+# found twice under different module names").
+explicit_package_bases = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
