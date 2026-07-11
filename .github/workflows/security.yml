@@ -15,9 +15,13 @@ jobs:
       # own first-party code -- and local workspace packages can't be hash-verified anyway
       # (pip refuses to `--require-hashes` a directory), which broke this job entirely before.
       - run: uv export --all-packages --no-dev --no-emit-workspace --format requirements-txt > requirements.audit.txt
+      # torch is pinned to the CPU-only build (packages/legal_retrieval/pyproject.toml), which
+      # only exists on PyTorch's own wheel index, not default PyPI -- pip-audit's installer
+      # needs to know to look there too, or it can't resolve `torch==...+cpu` at all.
       - uses: pypa/gh-action-pip-audit@v1.1.0
         with:
           inputs: requirements.audit.txt
+          extra-index-urls: https://download.pytorch.org/whl/cpu
 
   secret-scan:
     runs-on: ubuntu-latest
