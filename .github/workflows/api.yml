@@ -12,6 +12,13 @@ on:
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
+    # openlex_shared.config.Settings requires these three at import time (no .env file exists
+    # in CI). Only apps/api/tests + packages/*/tests run here -- all mock external calls, so
+    # dummy values are correct here; never used for a real Claude call or DB connection.
+    env:
+      ANTHROPIC_API_KEY: ci-placeholder
+      DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
+      JWT_SECRET_KEY: ci-placeholder-not-a-real-secret-32chars
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
