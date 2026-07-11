@@ -12,13 +12,13 @@ not exist yet (see "Current state" in the root `CLAUDE.md`) — this is where th
 ```mermaid
 flowchart TB
     User(["Browser"])
-    Web["apps/web\n(Vite/React/TS)"]
-    API["apps/api\n(FastAPI)"]
-    DB[("PostgreSQL + pgvector\ndocuments, chunks\nhybrid: cosine ANN + FTS")]
-    Claude[["Anthropic API\n(claude-sonnet)"]]
-    Worker["apps/worker\n(scheduled ingestion)"]
+    Web["apps/web<br/>(Vite/React/TS)"]
+    API["apps/api<br/>(FastAPI)"]
+    DB[("PostgreSQL + pgvector<br/>documents, chunks<br/>hybrid: cosine ANN + FTS")]
+    Claude[["Anthropic API<br/>(claude-sonnet)"]]
+    Worker["apps/worker<br/>(scheduled ingestion)"]
     NYAPI[["NY Open Legislation API"]]
-    CaseSeed[("seed_cases.json\nhand-curated, no public API")]
+    CaseSeed[("seed_cases.json<br/>hand-curated, no public API")]
 
     User --> Web --> API
     API -- hybrid retrieval --> DB
@@ -35,23 +35,23 @@ flowchart TB
     subgraph AWS["AWS Account — us-east-1"]
         subgraph VPC["VPC"]
             subgraph Public["Public subnet(s)"]
-                NAT["NAT Gateway\n(optional — see cost doc)"]
-                ALB["ALB / Ingress\n(optional in dev)"]
+                NAT["NAT Gateway<br/>(optional — see cost doc)"]
+                ALB["ALB / Ingress<br/>(optional in dev)"]
             end
             subgraph Private["Private subnet(s) — or public w/ locked-down SG in lean dev"]
                 subgraph EKS["EKS cluster (control plane: $0.10/hr flat, managed by AWS)"]
                     subgraph NodeGroup["Managed node group — e.g. 1x t4g.medium, Spot"]
-                        PodAPI["Pod: openlex-api\n(FastAPI, HPA 1-2 replicas)"]
-                        PodWorker["Pod: openlex-worker\n(CronJob or scheduled Deployment)"]
-                        PodWeb["Pod: openlex-web\n(static, optional in dev)"]
-                        PodPG["Pod: postgres+pgvector\nStatefulSet + PVC\n(or swap for RDS)"]
+                        PodAPI["Pod: openlex-api<br/>(FastAPI, HPA 1-2 replicas)"]
+                        PodWorker["Pod: openlex-worker<br/>(CronJob or scheduled Deployment)"]
+                        PodWeb["Pod: openlex-web<br/>(static, optional in dev)"]
+                        PodPG["Pod: postgres+pgvector<br/>StatefulSet + PVC<br/>(or swap for RDS)"]
                     end
                 end
             end
         end
-        ECR[["ECR\napi/worker/web images"]]
-        Secrets[["Secrets Manager /\nK8s Secret (dev)"]]
-        RDS[("RDS PostgreSQL\n(alternative to in-cluster PG,\nsee cost doc)")]
+        ECR[["ECR<br/>api/worker/web images"]]
+        Secrets[["Secrets Manager /<br/>K8s Secret (dev)"]]
+        RDS[("RDS PostgreSQL<br/>(alternative to in-cluster PG,<br/>see cost doc)")]
     end
 
     Internet(("Internet"))
@@ -82,13 +82,13 @@ Notes:
 ```mermaid
 flowchart LR
     NYAPI[["NY Open Legislation API"]] -->|client.py, throttled| Fetch["Fetch raw statute text"]
-    CaseSeed[("seed_cases.json\nhand-curated")] --> Fetch2["Load raw case text"]
+    CaseSeed[("seed_cases.json<br/>hand-curated")] --> Fetch2["Load raw case text"]
     Fetch --> Normalize["pipelines/normalization"]
     Fetch2 --> Normalize
-    Normalize --> Chunk["pipelines/chunking\n(legal_parsing)"]
-    Chunk --> Embed["pipelines/embeddings\nbge-small-en-v1.5, CPU, in-process\n(passage text, no prefix)"]
+    Normalize --> Chunk["pipelines/chunking<br/>(legal_parsing)"]
+    Chunk --> Embed["pipelines/embeddings<br/>bge-small-en-v1.5, CPU, in-process<br/>(passage text, no prefix)"]
     Embed --> Index["pipelines/indexing"]
-    Index --> DB[("documents + chunks\nPostgres + pgvector")]
+    Index --> DB[("documents + chunks<br/>Postgres + pgvector")]
 ```
 
 ## 4. Query-time sequence (grounded answer contract)
