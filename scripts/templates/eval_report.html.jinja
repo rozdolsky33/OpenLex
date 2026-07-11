@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenLex golden-question evaluation report</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff; --fg: #1a1a1a; --muted: #6b7280; --border: #e5e7eb;
+    --pass: #15803d; --pass-bg: #dcfce7;
+    --fail: #b91c1c; --fail-bg: #fee2e2;
+    --abstain-bg: #f3f4f6;
+    --warn: #92400e; --warn-bg: #fef3c7;
+    --card-bg: #f9fafb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1117; --fg: #e5e7eb; --muted: #9ca3af; --border: #2a2e37;
+      --pass: #4ade80; --pass-bg: #14291d;
+      --fail: #f87171; --fail-bg: #2c1416;
+      --abstain-bg: #1a1d24;
+      --warn: #fbbf24; --warn-bg: #2a2110;
+      --card-bg: #171a21;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--fg); margin: 0; padding: 2rem 1.5rem 4rem;
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  main { max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+  h2 { font-size: 1.1rem; margin-top: 2.5rem; border-bottom: 1px solid var(--border); padding-bottom: 0.4rem; }
+  .subtitle { color: var(--muted); margin-top: 0; }
+  .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.75rem; margin: 1rem 0; }
+  .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.9rem 1rem; }
+  .card .label { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
+  .card .value { font-size: 1.3rem; font-weight: 600; margin-top: 0.2rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.02em; }
+  .badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600; }
+  .badge-pass { color: var(--pass); background: var(--pass-bg); }
+  .badge-fail { color: var(--fail); background: var(--fail-bg); }
+  .badge-warn { color: var(--warn); background: var(--warn-bg); }
+  .cell-abstain { background: var(--abstain-bg); }
+  details { margin-top: 0.3rem; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 0.82rem; }
+  .answer-text { white-space: pre-wrap; margin: 0.3rem 0 0; font-size: 0.85rem; }
+  .citations { font-size: 0.82rem; color: var(--muted); }
+  .table-wrap { overflow-x: auto; }
+  .history-grid td { text-align: center; font-size: 0.78rem; width: 1.6rem; }
+  .history-cell-pass { background: var(--pass-bg); color: var(--pass); }
+  .history-cell-fail { background: var(--fail-bg); color: var(--fail); }
+  .history-cell-abstain-pass { background: var(--abstain-bg); color: var(--muted); }
+  footer { margin-top: 3rem; color: var(--muted); font-size: 0.8rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>OpenLex golden-question evaluation</h1>
+  <p class="subtitle">Legal-accuracy regression suite for the retrieval + generation pipeline, run against a live stack.</p>
+
+  <div class="meta-grid">
+    {% if haiku_metadata %}
+    <div class="card">
+      <div class="label">Haiku run</div>
+      <div class="value">{{ haiku_metadata.model }}</div>
+      <div class="citations">{{ haiku_metadata.timestamp_utc }} &middot; {{ haiku_metadata.trigger }}</div>
+    </div>
+    {% endif %}
+    {% if sonnet_metadata %}
+    <div class="card">
+      <div class="label">Sonnet run (production model)</div>
+      <div class="value">{{ sonnet_metadata.model }}</div>
+      <div class="citations">{{ sonnet_metadata.timestamp_utc }} &middot; {{ sonnet_metadata.trigger }}</div>
+    </div>
+    {% endif %}
+    <div class="card">
+      <div class="label">Divergent questions</div>
+      <div class="value">{{ divergence_count }} / {{ rows | length }}</div>
+    </div>
+    {% if haiku_metadata and haiku_metadata.workflow_url %}
+    <div class="card">
+      <div class="label">Workflow run</div>
+      <div class="value"><a href="{{ haiku_metadata.workflow_url }}">{{ haiku_metadata.run_id }}</a></div>
+      <div class="citations">{{ haiku_metadata.git_sha[:12] if haiku_metadata.git_sha else '' }}</div>
+    </div>
+    {% endif %}
+  </div>
+
+  <h2>Results detail</h2>
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Question</th>
+        <th>Expected</th>
+        <th>Haiku</th>
+        <th>Sonnet</th>
+        <th>Diverges</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>
+          <strong>{{ row.case_id }}</strong>
+          <div class="citations">{{ row.question }}</div>
+        </td>
+        <td class="citations">
+          {% if row.expect_abstain %}(expect abstain){% else %}{{ row.expected_citations | join(", ") }}{% endif %}
+        </td>
+        <td>
+          {% if row.haiku %}
+            {% if row.haiku.outcome == "passed" %}<span class="badge badge-pass">pass</span>{% else %}<span class="badge badge-fail">fail</span>{% endif %}
+            <div class="citations">{{ row.haiku.actual_citations | join(", ") if row.haiku.actual_citations else ("abstained" if row.haiku.actual_abstained else "") }}</div>
+            {% if row.haiku.actual_answer %}
+            <details><summary>answer</summary><p class="answer-text">{{ row.haiku.actual_answer }}</p></details>
+            {% endif %}
+            {% if row.haiku.failure_reason %}
+            <details><summary>failure</summary><p class="answer-text">{{ row.haiku.failure_reason }}</p></details>
+            {% endif %}
+          {% else %}
+            <span class="citations">n/a</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if row.sonnet %}
+            {% if row.sonnet.outcome == "passed" %}<span class="badge badge-pass">pass</span>{% else %}<span class="badge badge-fail">fail</span>{% endif %}
+            <div class="citations">{{ row.sonnet.actual_citations | join(", ") if row.sonnet.actual_citations else ("abstained" if row.sonnet.actual_abstained else "") }}</div>
+            {% if row.sonnet.actual_answer %}
+            <details><summary>answer</summary><p class="answer-text">{{ row.sonnet.actual_answer }}</p></details>
+            {% endif %}
+            {% if row.sonnet.failure_reason %}
+            <details><summary>failure</summary><p class="answer-text">{{ row.sonnet.failure_reason }}</p></details>
+            {% endif %}
+          {% else %}
+            <span class="citations">n/a</span>
+          {% endif %}
+        </td>
+        <td>{% if row.diverges %}<span class="badge badge-warn">diverges</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <h2>Historical trend</h2>
+  {% if history %}
+  <div class="table-wrap">
+  <table class="history-grid">
+    <thead>
+      <tr>
+        <th>Question</th>
+        {% for run in history %}<th title="{{ run.timestamp_utc }}">{{ run.git_sha[:7] if run.git_sha else run.run_id }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.case_id }}</td>
+        {% for run in history %}
+          {% set outcome = run.haiku.get(row.case_id) if run.haiku else None %}
+          {% if outcome == "passed" and row.expect_abstain %}
+            <td class="history-cell-abstain-pass" title="passed (abstain)">&#9679;</td>
+          {% elif outcome == "passed" %}
+            <td class="history-cell-pass" title="passed">&#9679;</td>
+          {% elif outcome == "failed" %}
+            <td class="history-cell-fail" title="failed">&#9679;</td>
+          {% else %}
+            <td title="no data">&mdash;</td>
+          {% endif %}
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="citations">No prior runs recorded yet -- this is the first entry in the history.</p>
+  {% endif %}
+
+  <h2>Statute freshness</h2>
+  {% if freshness %}
+    {% set changed_sections = freshness.sections | selectattr("changed") | list %}
+    {% if changed_sections %}
+    <p>{{ changed_sections | length }} section(s) changed since last ingestion -- the golden answer graded against the old snapshot may need review.</p>
+    <table>
+      <thead><tr><th>Citation</th><th>Stored activeDate</th><th>Live activeDate</th></tr></thead>
+      <tbody>
+        {% for s in changed_sections %}
+        <tr><td>{{ s.citation }}</td><td>{{ s.stored_active_date }}</td><td>{{ s.live_active_date }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="citations">All {{ freshness.sections | length }} seeded sections match their live activeDate as of {{ freshness.checked_at }}.</p>
+    {% endif %}
+    {% set errored_sections = freshness.sections | selectattr("error") | list %}
+    {% if errored_sections %}
+    <p class="citations">{{ errored_sections | length }} section(s) could not be checked this run: {{ errored_sections | map(attribute="citation") | join(", ") }}.</p>
+    {% endif %}
+  {% else %}
+    <p class="citations">Freshness check unavailable this run.</p>
+  {% endif %}
+
+  <footer>Generated by scripts/generate_eval_report.py &middot; see docs/decisions/0004-golden-question-report-and-pages.md</footer>
+</main>
+</body>
+</html>

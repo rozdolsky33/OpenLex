@@ -64,7 +64,17 @@ def _auth_token(_require_live_api: None) -> str:
 
 
 @pytest.mark.parametrize("case", _load_golden_questions(), ids=lambda case: case["id"])
-def test_golden_question(case: dict[str, Any], _auth_token: str) -> None:
+def test_golden_question(
+    case: dict[str, Any], _auth_token: str, eval_result: dict[str, Any]
+) -> None:
+    # Record request-side fields before the call, and actual-response fields as soon as they're
+    # received -- BEFORE any assertion below can raise -- so a failing test still reports what
+    # it actually got, not just that it failed (see conftest.py's module docstring).
+    eval_result["case_id"] = case["id"]
+    eval_result["question"] = case["question"]
+    eval_result["expected_citations"] = case.get("expected_citations", [])
+    eval_result["expect_abstain"] = case.get("expect_abstain", False)
+
     response = httpx.post(
         f"{API_BASE_URL}/query",
         json={"question": case["question"]},
@@ -73,6 +83,10 @@ def test_golden_question(case: dict[str, Any], _auth_token: str) -> None:
     )
     response.raise_for_status()
     body = response.json()
+
+    eval_result["actual_abstained"] = body["abstained"]
+    eval_result["actual_citations"] = [c["citation"] for c in body["citations"]]
+    eval_result["actual_answer"] = body["answer"]
 
     if case.get("expect_abstain", False):
         assert body["abstained"] is True, f"expected abstain, got answer: {body['answer']!r}"

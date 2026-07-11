@@ -8,6 +8,14 @@ on:
       - "ml/prompts/**"
       - "pipelines/chunking/**"
       - "tests/evaluation/**"
+  push:
+    branches: [main]
+    paths:
+      - "packages/legal_retrieval/**"
+      - "packages/legal_generation/**"
+      - "ml/prompts/**"
+      - "pipelines/chunking/**"
+      - "tests/evaluation/**"
 
 jobs:
   golden-questions:
@@ -18,6 +26,12 @@ jobs:
     # exists, and only once ANTHROPIC_API_KEY + NY_OPEN_LEG_API_KEY are configured as repo
     # secrets (Settings > Secrets and variables > Actions). Until both are added, this job
     # skips gracefully with a ::notice:: rather than failing.
+    #
+    # On pull_request: single Haiku pass only, matching this job's original (pre-report) cost.
+    # On push to main: also runs a second Sonnet pass (the production default model), a
+    # statute-freshness check, and uploads results for the publish-eval-report job below --
+    # see docs/decisions/0004-golden-question-report-and-pages.md for why this is gated to
+    # main-only (the dual-model pass roughly doubles real Anthropic spend for this job).
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -50,12 +64,12 @@ jobs:
           fi
 
       # --all-packages, not --package openlex-api: a package-scoped sync excludes the dev
-      # group (pytest), which this job needs directly.
+      # group (pytest, jinja2), which this job needs directly.
       - name: Sync workspace
         if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true'
         run: uv sync --all-packages
 
-      - name: Write .env for the live stack
+      - name: Write .env for the live stack (Haiku)
         if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -73,8 +87,8 @@ jobs:
           JWT_EXPIRE_MINUTES=60
           EOF
           # ANTHROPIC_MODEL overrides the production default (claude-sonnet-4-5) with Haiku
-          # for this job only -- still real Claude calls against the real pipeline, just much
-          # cheaper per run. See docs/decisions/ for the cost/coverage tradeoff this accepts.
+          # for this pass -- still real Claude calls against the real pipeline, just much
+          # cheaper. See docs/decisions/0004-golden-question-report-and-pages.md.
 
       - name: Start db, api, and worker
         if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true'
@@ -83,7 +97,7 @@ jobs:
         # docker-compose.yml, so this already waits for Postgres's own healthcheck
         # (pg_isready) before starting either -- no separate DB-readiness poll needed here.
 
-      - name: Wait for API to report status=ok
+      - name: Wait for API to report status=ok (Haiku)
         if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true'
         run: |
           for i in $(seq 1 60); do
@@ -107,10 +121,95 @@ jobs:
         if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true'
         run: scripts/ingest.sh statutes
 
-      - name: Run golden-question evaluation
+      - name: Check statute freshness
+        if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'push'
+        continue-on-error: true
+        env:
+          DATABASE_URL: postgresql+asyncpg://openlex:openlex@localhost:5432/openlex
+          FRESHNESS_RESULTS_PATH: freshness-results.json
+        run: uv run --package openlex-api python scripts/check_statute_freshness.py
+        # No ANTHROPIC_API_KEY spend at all -- runs before either Claude pass so a transient
+        # NY Open Legislation API hiccup doesn't burn Claude budget first.
+        # continue-on-error: one bad live fetch shouldn't fail the whole job (the report
+        # renders "freshness check unavailable this run" when this file is missing/errored --
+        # see scripts/generate_eval_report.py).
+
+      - name: Run golden-question evaluation (Haiku)
         if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true'
         env:
           EVAL_API_BASE_URL: http://localhost:8000
+          EVAL_RESULTS_PATH: results-haiku.json
+          ANTHROPIC_MODEL: claude-haiku-4-5
+        run: scripts/evaluate.sh
+
+      - name: Verify production model default hasn't drifted
+        if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'push'
+        run: |
+          uv run python -c "
+          from openlex_shared.config import Settings
+          default = Settings.model_fields['anthropic_model'].default
+          assert default == 'claude-sonnet-4-5', (
+              f'production anthropic_model default drifted to {default!r} -- update this '
+              'workflow\'s Sonnet comparison pass (both .env-writing steps and this check) '
+              'to match'
+          )
+          print('OK: production default is', default)
+          "
+        # Guards against silently mislabeling the "production comparison" pass if
+        # packages/shared/src/openlex_shared/config.py's default ever changes without this
+        # workflow being updated to match.
+
+      - name: Write .env for the live stack (Sonnet)
+        if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'push'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NY_OPEN_LEG_API_KEY: ${{ secrets.NY_OPEN_LEG_API_KEY }}
+        run: |
+          cat > .env <<EOF
+          ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+          ANTHROPIC_MODEL=claude-sonnet-4-5
+          DATABASE_URL=postgresql+asyncpg://openlex:openlex@db:5432/openlex
+          NY_OPEN_LEG_API_KEY=${NY_OPEN_LEG_API_KEY}
+          NY_OPEN_LEG_BASE_URL=https://legislation.nysenate.gov/api/3
+          EMBEDDING_MODEL_NAME=BAAI/bge-small-en-v1.5
+          JWT_SECRET_KEY=ci-golden-questions-not-a-real-secret-32chars
+          JWT_ALGORITHM=HS256
+          JWT_EXPIRE_MINUTES=60
+          EOF
+
+      - name: Recreate api with the new model
+        if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'push'
+        run: docker compose up -d --force-recreate --no-deps api
+        # A recreate, not a restart, is required: openlex_shared.config.Settings is a
+        # module-level singleton built once at container process start from `env_file: .env`
+        # -- a restart would reuse the already-running process's already-baked env and
+        # silently keep using Haiku. --no-deps leaves db/worker untouched (worker never calls
+        # Claude, no need to recreate it).
+
+      - name: Wait for API to report status=ok (Sonnet)
+        if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'push'
+        run: |
+          for i in $(seq 1 60); do
+            health_status=$(curl -sf http://localhost:8000/healthz | jq -r '.status' 2>/dev/null || echo "unreachable")
+            if [ "$health_status" = "ok" ]; then
+              echo "API ready"
+              exit 0
+            fi
+            echo "waiting for API readiness ($i/60): $health_status"
+            sleep 5
+          done
+          echo "::error::API did not report status=ok within 5 minutes"
+          docker compose logs api
+          exit 1
+        # The embedding model reloads from scratch on the freshly recreated container -- this
+        # wait is real time, not free.
+
+      - name: Run golden-question evaluation (Sonnet)
+        if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'push'
+        env:
+          EVAL_API_BASE_URL: http://localhost:8000
+          EVAL_RESULTS_PATH: results-sonnet.json
+          ANTHROPIC_MODEL: claude-sonnet-4-5
         run: scripts/evaluate.sh
 
       - name: Show container logs on failure
@@ -120,3 +219,106 @@ jobs:
       - name: Tear down the live stack
         if: always() && steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true'
         run: docker compose down -v --remove-orphans
+
+      - name: Upload results artifacts
+        if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: |
+            results-haiku.json
+            results-sonnet.json
+            freshness-results.json
+          if-no-files-found: warn
+          retention-days: 90
+
+  publish-eval-report:
+    needs: golden-questions
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # pushes history.ndjson to gh-pages ourselves -- NOT the vanilla
+        # read-only deploy-pages template; actions/deploy-pages itself needs no branch
+        # access at all, it deploys straight from the uploaded artifact to the Pages CDN.
+        # gh-pages here is purely our own git-native append-only history store.
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: eval-report-publish
+      cancel-in-progress: false # queue, don't cancel/collide -- primary defense against two
+        # close-together main-push runs racing on the gh-pages append.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages
+
+      - name: Download results artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: eval-results
+          path: .
+
+      - name: Prepare gh-pages history checkout
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin gh-pages > /dev/null 2>&1; then
+            git clone --branch gh-pages --single-branch --depth 1 \
+              "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" \
+              gh-pages-checkout
+          else
+            mkdir gh-pages-checkout
+            git -C gh-pages-checkout init -b gh-pages
+            git -C gh-pages-checkout remote add origin \
+              "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          fi
+
+      - name: Append this run to history.ndjson
+        run: |
+          touch gh-pages-checkout/history.ndjson
+          uv run python -c "
+          import json
+          from pathlib import Path
+
+          haiku = json.loads(Path('results-haiku.json').read_text())
+          sonnet = json.loads(Path('results-sonnet.json').read_text())
+          entry = {
+              'run_id': haiku['run_metadata']['run_id'],
+              'git_sha': haiku['run_metadata']['git_sha'],
+              'timestamp_utc': haiku['run_metadata']['timestamp_utc'],
+              'haiku': {r['case_id']: r['outcome'] for r in haiku['results']},
+              'sonnet': {r['case_id']: r['outcome'] for r in sonnet['results']},
+          }
+          with open('gh-pages-checkout/history.ndjson', 'a') as f:
+              f.write(json.dumps(entry) + chr(10))
+          "
+          cp gh-pages-checkout/history.ndjson history.ndjson
+
+      - name: Generate report
+        run: uv run python scripts/generate_eval_report.py
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - uses: actions/deploy-pages@v4
+        id: deployment
+
+      - name: Commit and push history to gh-pages
+        run: |
+          cd gh-pages-checkout
+          git add history.ndjson
+          if git diff --cached --quiet; then
+            echo "No history changes to commit."
+          else
+            git commit -m "Record evaluation run ${{ github.sha }}"
+            git push origin gh-pages
+          fi
