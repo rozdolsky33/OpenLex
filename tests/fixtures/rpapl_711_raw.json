@@ -1,0 +1,83 @@
+{
+  "lawId": "RPA",
+  "lawName": "Real Property Actions & Proceedings",
+  "locationId": "711",
+  "title": "Grounds where landlord-tenant relationship exists",
+  "docType": "SECTION",
+  "publishedDates": [
+    "2014-09-22",
+    "2019-06-28",
+    "2024-05-03",
+    "2024-12-13"
+  ],
+  "docLevelId": "711",
+  "activeDate": "2024-12-13",
+  "text": "  § 711. Grounds where landlord-tenant relationship exists. A tenant\\nshall include an occupant of one or more rooms in a rooming house or a\\nresident, not including a transient occupant, of one or more rooms in a\\nhotel who has been in possession for thirty consecutive days or longer.\\nA tenant shall not include a squatter. For the purposes of this section,\\na squatter is a person who enters onto or intrudes upon real property\\nwithout the permission of the person entitled to possession, and\\ncontinues to occupy the property without title, right or permission of\\nthe owner or owner's agent or a person entitled to possession. In the\\nevent of a conflict between the provisions regarding squatters of this\\nsection and the provisions of subdivision three of section seven hundred\\nthirteen of this article, the provisions of section seven hundred\\nthirteen of this article shall be controlling. No tenant or lawful\\noccupant of a dwelling or housing accommodation shall be removed from\\npossession except in a special proceeding. A special proceeding may be\\nmaintained under this article upon the following grounds:\\n  1. The tenant continues in possession of any portion of the premises\\nafter the expiration of his term, without the permission of the landlord\\nor, in a case where a new lessee is entitled to possession, without the\\npermission of the new lessee. Acceptance of rent after commencement of\\nthe special proceeding upon this ground shall not terminate such\\nproceeding nor effect any award of possession to the landlord or to the\\nnew lessee, as the case may be. A proceeding seeking to recover\\npossession of real property by reason of the termination of the term\\nfixed in the lease pursuant to a provision contained therein giving the\\nlandlord the right to terminate the time fixed for occupancy under such\\nagreement if he deem the tenant objectionable, shall not be maintainable\\nunless the landlord shall by competent evidence establish to the\\nsatisfaction of the court that the tenant is objectionable.\\n  * 2. The tenant has defaulted in the payment of rent, pursuant to the\\nagreement under which the premises are held, and a written demand of the\\nrent has been made with at least fourteen days' notice requiring, in the\\nalternative, the payment of the rent, or the possession of the premises,\\nhas been served upon the tenant as prescribed in section seven hundred\\nthirty-five of this article. The fourteen-day notice shall append or\\ncontain the notice required pursuant to section two hundred thirty-one-c\\nof the real property law, which shall state the following: (i) if the\\npremises are or are not subject to article six-A of the real property\\nlaw, the \"good cause eviction law\", and if the premises are exempt, such\\nnotice shall state why the premises are exempt from such law; (ii) if\\nthe landlord is not renewing the lease for a unit subject to article\\nsix-A of the real property law, the lawful basis for such non-renewal;\\nand (iii) if the landlord is increasing the rent upon an existing lease\\nof a unit subject to article six-A of the real property law above the\\napplicable local rent standard, as defined in subdivision eight of\\nsection two hundred eleven of the real property law, the justification\\nfor such increase. Any person succeeding to the landlord's interest in\\nthe premises may proceed under this subdivision for rent due such\\nperson's predecessor in interest if such person has a right thereto.\\nWhere a tenant dies during the term of the lease and rent due has not\\nbeen paid and the apartment is occupied by a person with a claim to\\npossession, a proceeding may be commenced naming the occupants of the\\napartment seeking a possessory judgment only as against the estate.\\nEntry of such a judgment shall be without prejudice to the possessory\\nclaims of the occupants, and any warrant issued shall not be effective\\nas against the occupants.\\n  * NB Effective until June 15, 2034\\n  * 2. The tenant has defaulted in the payment of rent, pursuant to the\\nagreement under which the premises are held, and a written demand of the\\nrent has been made with at least fourteen days' notice requiring, in the\\nalternative, the payment of the rent, or the possession of the premises,\\nhas been served upon him as prescribed in section seven hundred\\nthirty-five of this article. Any person succeeding to the landlord's\\ninterest in the premises may proceed under this subdivision for rent due\\nhis predecessor in interest if he has a right thereto. Where a tenant\\ndies during the term of the lease and rent due has not been paid and the\\napartment is occupied by a person with a claim to possession, a\\nproceeding may be commenced naming the occupants of the apartment\\nseeking a possessory judgment only as against the estate. Entry of such\\na judgment shall be without prejudice to the possessory claims of the\\noccupants, and any warrant issued shall not be effective as against the\\noccupants.\\n  * NB Effective June 15, 2034\\n  3. The tenant, in a city defaults in the payment, for sixty days after\\nthe same shall be payable, of any taxes or assessments levied on the\\npremises which he has agreed in writing to pay pursuant to the agreement\\nunder which the premises are held, and a demand for payment has been\\nmade, or at least three days' notice in writing, requiring in the\\nalternative the payment thereof and of any interest and penalty thereon,\\nor the possession of the premises, has been served upon him, as\\nprescribed in section 735. An acceptance of any rent shall not be\\nconstrued as a waiver of the agreement to pay taxes or assessments.\\n  4. The tenant, under a lease for a term of three years or less, has\\nduring the term taken the benefit of an insolvency statute or has been\\nadjudicated a bankrupt.\\n  5. The premises, or any part thereof, are used or occupied as a\\nbawdy-house, or house or place of assignation for lewd persons, or for\\npurposes of prostitution, or for any illegal trade or manufacture, or\\nother illegal business.\\n  6. The tenant, in a city having a population of one million or more,\\nremoves the batteries or otherwise disconnects or makes inoperable an\\ninstalled smoke or fire detector which the tenant has not requested be\\nmoved from its location so as not to interfere with the reasonable use\\nof kitchen facilities provided that the court, upon complaint thereof,\\nhas previously issued an order of violation of the provisions heretofore\\nstated and, subsequent to the thirtieth day after service of such order\\nupon the tenant, an official inspection report by the appropriate\\ndepartment of housing preservation and development is presented, in\\nwriting, indicating non-compliance herewith; provided further, that the\\ntenant shall have the additional ten day period to cure such violation\\nin accordance with the provisions of subdivision four of section seven\\nhundred fifty-three of this chapter.\\n",
+  "parentLocationIds": [
+    "-CH81",
+    "A7"
+  ],
+  "parents": [
+    {
+      "lawId": "RPA",
+      "lawName": "Real Property Actions & Proceedings",
+      "locationId": "-CH81",
+      "title": "Real Property Actions & Proceedings",
+      "docType": "CHAPTER",
+      "publishedDates": [
+        "2014-09-22",
+        "2019-12-13",
+        "2019-12-20",
+        "2022-11-25",
+        "2022-12-23",
+        "2023-01-06"
+      ],
+      "docLevelId": "81",
+      "activeDate": "2023-01-06"
+    },
+    {
+      "lawId": "RPA",
+      "lawName": "Real Property Actions & Proceedings",
+      "locationId": "A7",
+      "title": "Summary Proceeding to Recover Possession of Real Property",
+      "docType": "ARTICLE",
+      "publishedDates": [
+        "2014-09-22",
+        "2015-10-30",
+        "2016-01-22",
+        "2019-06-28",
+        "2023-05-12",
+        "2023-11-17",
+        "2024-07-05"
+      ],
+      "docLevelId": "7",
+      "activeDate": "2024-07-05"
+    }
+  ],
+  "prevSibling": {
+    "lawId": "RPA",
+    "lawName": "Real Property Actions & Proceedings",
+    "locationId": "702",
+    "title": "Rent in a residential dwelling",
+    "docType": "SECTION",
+    "publishedDates": [
+      "2019-06-28",
+      "2022-01-07"
+    ],
+    "docLevelId": "702",
+    "activeDate": "2022-01-07"
+  },
+  "nextSibling": {
+    "lawId": "RPA",
+    "lawName": "Real Property Actions & Proceedings",
+    "locationId": "713",
+    "title": "Grounds where no landlord-tenant relationship exists",
+    "docType": "SECTION",
+    "publishedDates": [
+      "2014-09-22"
+    ],
+    "docLevelId": "713",
+    "activeDate": "2014-09-22"
+  },
+  "_citationAbbrev": "RPAPL"
+}

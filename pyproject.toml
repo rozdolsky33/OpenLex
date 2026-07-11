@@ -17,6 +17,7 @@ dev = [
     "pytest>=8.3.4",
     "pytest-asyncio>=0.24.0",
     "httpx>=0.28.1",
+    "pyyaml>=6.0.3",
 ]
 
 [tool.ruff]
@@ -29,6 +30,9 @@ select = ["E", "F", "I", "UP", "B", "ASYNC"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
+# FastAPI's dependency-injection pattern requires Depends()/similar calls in argument
+# defaults -- this is the idiomatic FastAPI pattern, not the bug B008 usually flags.
+"apps/api/**" = ["B008"]
 
 [tool.mypy]
 python_version = "3.11"
@@ -39,3 +43,7 @@ exclude = ["tests/fixtures"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["apps", "packages", "tests"]
+markers = [
+    "evaluation: golden-question legal-accuracy eval -- hits a live API + real Claude, costs money and needs a running server. Excluded from the default run; use scripts/evaluate.sh.",
+]
+addopts = "-m 'not evaluation'"

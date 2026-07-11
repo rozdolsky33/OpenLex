@@ -12,6 +12,7 @@ dist/
 .DS_Store
 pgdata/
 requirements.audit.txt
+.idea/
 
 # Claude Code harness artifacts (not project files)
 .agents/

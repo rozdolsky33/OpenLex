@@ -9,10 +9,12 @@ requires-python = ">=3.11"
 dependencies = [
     "legal-models",
     "anthropic>=0.42.0",
+    "legal-retrieval",
 ]
 
 [tool.uv.sources]
 legal-models = { workspace = true }
+legal-retrieval = { workspace = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/legal_generation"]

@@ -193,7 +193,7 @@ name = "cuda-bindings"
 version = "13.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cuda-pathfinder" },
+    { name = "cuda-pathfinder", marker = "python_full_version < '3.15'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/51/6b/457ca12dad3ee9bfcc9a545cfd6b64b359ba49de40f776f6e028e678f262/cuda_bindings-13.3.1-cp311-cp311-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:c5879712accf6e14bb01aa5e67440eb84998b8d104b509cc7a6dc0b8f656a474", size = 6053539, upload-time = "2026-05-29T23:11:43.19Z" },
@@ -658,12 +658,14 @@ source = { editable = "packages/legal_generation" }
 dependencies = [
     { name = "anthropic" },
     { name = "legal-models" },
+    { name = "legal-retrieval" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "anthropic", specifier = ">=0.42.0" },
     { name = "legal-models", editable = "packages/legal_models" },
+    { name = "legal-retrieval", editable = "packages/legal_retrieval" },
 ]
 
 [[package]]
@@ -701,14 +703,18 @@ source = { editable = "packages/legal_retrieval" }
 dependencies = [
     { name = "legal-models" },
     { name = "openlex-shared" },
+    { name = "sentence-transformers" },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "torch" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "legal-models", editable = "packages/legal_models" },
     { name = "openlex-shared", editable = "packages/shared" },
+    { name = "sentence-transformers", specifier = ">=5.6.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.36" },
+    { name = "torch", specifier = ">=2.13.0" },
 ]
 
 [[package]]
@@ -1334,6 +1340,7 @@ dev = [
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "pyyaml" },
     { name = "ruff" },
 ]
 
@@ -1345,6 +1352,7 @@ dev = [
     { name = "mypy", specifier = ">=1.13.0" },
     { name = "pytest", specifier = ">=8.3.4" },
     { name = "pytest-asyncio", specifier = ">=0.24.0" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "ruff", specifier = ">=0.8.6" },
 ]
 
