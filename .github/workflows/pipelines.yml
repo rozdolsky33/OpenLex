@@ -17,7 +17,9 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
-      - run: uv sync --package openlex-worker
+      # --all-packages, not --package openlex-worker: a package-scoped sync excludes the dev
+      # group (ruff/mypy/pytest), which this job needs directly.
+      - run: uv sync --all-packages
       - run: uv run ruff check pipelines apps/worker packages/legal_parsing packages/legal_models packages/shared
       - run: uv run mypy pipelines apps/worker/src packages/legal_parsing packages/legal_models packages/shared
       - run: uv run --package openlex-worker pytest apps/worker/tests packages/legal_parsing packages/legal_models packages/shared -v

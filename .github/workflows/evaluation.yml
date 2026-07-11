@@ -28,7 +28,9 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
             echo "::notice::tests/evaluation/golden_questions.yaml doesn't exist yet — skipping."
           fi
+      # --all-packages, not --package openlex-api: a package-scoped sync excludes the dev
+      # group (pytest), which this job needs directly.
       - if: steps.golden.outputs.exists == 'true'
-        run: uv sync --package openlex-api
+        run: uv sync --all-packages
       - if: steps.golden.outputs.exists == 'true'
         run: uv run --package openlex-api pytest tests/evaluation -v
