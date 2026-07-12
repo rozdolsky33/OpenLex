@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 import pytest
 import yaml
+from openlex_shared.config import settings
 
 pytestmark = pytest.mark.evaluation
 
@@ -40,19 +41,21 @@ def _require_live_api() -> None:
 
 @pytest.fixture(scope="session")
 def _auth_token(_require_live_api: None) -> str:
-    """POST /query requires a bearer token (see apps/api/src/openlex_api/auth.py). Registers
-    a fixed eval user, tolerating 409 (already registered) so repeat runs against a
-    not-yet-recycled DB don't fail, then logs in for a token."""
-    email = "golden-questions-eval@example.com"
-    password = "eval-harness-not-a-real-password"
-
-    register_response = httpx.post(
-        f"{API_BASE_URL}/auth/register",
-        json={"email": email, "password": password},
-        timeout=10.0,
-    )
-    if register_response.status_code not in (201, 409):
-        register_response.raise_for_status()
+    """POST /query requires a bearer token (see apps/api/src/openlex_api/auth.py).
+    POST /auth/register is disabled for this demo (see routers/auth.py) -- only the three
+    seeded tier users can log in (apps/api/src/openlex_api/seed_demo_users.py /
+    scripts/seed-demo-users.sh must have already been run against the target API). Logs in as
+    the seeded Platinum user: the golden-question set (21 cases as of this writing) plus room
+    for repeat local runs within the same 4h window needs the highest per-tier quota, not
+    Silver/Gold's much tighter limits (see apps/api/src/openlex_api/quota.py)."""
+    email = settings.demo_platinum_email
+    password = settings.demo_platinum_password
+    if not email or not password:
+        pytest.fail(
+            "DEMO_PLATINUM_EMAIL/DEMO_PLATINUM_PASSWORD aren't set -- seed the demo users "
+            "(scripts/seed-demo-users.sh) and ensure .env has them before running the eval "
+            "harness."
+        )
 
     login_response = httpx.post(
         f"{API_BASE_URL}/auth/login",
