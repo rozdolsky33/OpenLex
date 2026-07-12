@@ -3,8 +3,25 @@ kind: Deployment
 metadata:
   name: openlex-api
 spec:
+  # 2 replicas spread across the two `openlex.dev/workload=apps` nodes (see
+  # infra/kubernetes/kind/kind-config.yaml) via the preferred podAntiAffinity below — real
+  # separation from the dedicated observability node, and real (if kind-scale) HA instead of
+  # both replicas landing on whatever node is free. See patch_resources.yaml Task 4's
+  # PodDisruptionBudget for what backs this during voluntary disruptions.
+  replicas: 2
   template:
     spec:
+      nodeSelector:
+        openlex.dev/workload: apps
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: openlex-api
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: api
           imagePullPolicy: IfNotPresent
@@ -48,6 +65,8 @@ metadata:
 spec:
   template:
     spec:
+      nodeSelector:
+        openlex.dev/workload: apps
       containers:
         - name: worker
           imagePullPolicy: IfNotPresent
@@ -64,6 +83,13 @@ kind: StatefulSet
 metadata:
   name: postgres
 spec:
+  # Single instance — real Postgres HA (streaming replicas, failover) would need an operator
+  # (e.g. CloudNativePG/Patroni), out of scope here. This only keeps Postgres off the
+  # dedicated observability node, same as the other app workloads.
+  template:
+    spec:
+      nodeSelector:
+        openlex.dev/workload: apps
   volumeClaimTemplates:
     - metadata:
         name: data
