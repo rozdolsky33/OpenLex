@@ -16,26 +16,71 @@ spec:
         valueFiles:
           - $values/infra/monitoring/kube-prometheus-stack/values-base.yaml
         valuesObject:
+          prometheusOperator:
+            # nodeSelector/tolerations only — resources already live in the shared
+            # values-base.yaml (25m/64Mi request, 100m/128Mi limit); do not repeat them here.
+            nodeSelector:
+              openlex.dev/workload: observability
+            tolerations:
+              - key: openlex.dev/workload
+                operator: Equal
+                value: observability
+                effect: NoSchedule
           prometheus:
             prometheusSpec:
               retention: 6h
+              nodeSelector:
+                openlex.dev/workload: observability
+              tolerations:
+                - key: openlex.dev/workload
+                  operator: Equal
+                  value: observability
+                  effect: NoSchedule
               resources:
                 requests: { cpu: 100m, memory: 400Mi }
                 limits: { cpu: 500m, memory: 800Mi }
           alertmanager:
             alertmanagerSpec:
+              nodeSelector:
+                openlex.dev/workload: observability
+              tolerations:
+                - key: openlex.dev/workload
+                  operator: Equal
+                  value: observability
+                  effect: NoSchedule
               resources:
                 requests: { cpu: 10m, memory: 32Mi }
                 limits: { cpu: 100m, memory: 64Mi }
           grafana:
+            nodeSelector:
+              openlex.dev/workload: observability
+            tolerations:
+              - key: openlex.dev/workload
+                operator: Equal
+                value: observability
+                effect: NoSchedule
             resources:
               requests: { cpu: 25m, memory: 96Mi }
               limits: { cpu: 100m, memory: 192Mi }
           kube-state-metrics:
+            nodeSelector:
+              openlex.dev/workload: observability
+            tolerations:
+              - key: openlex.dev/workload
+                operator: Equal
+                value: observability
+                effect: NoSchedule
             resources:
               requests: { cpu: 10m, memory: 32Mi }
               limits: { cpu: 50m, memory: 64Mi }
           prometheus-node-exporter:
+            # DaemonSet — must run on every node (including the observability one, to report
+            # its own metrics), so only the toleration, no nodeSelector restricting it.
+            tolerations:
+              - key: openlex.dev/workload
+                operator: Equal
+                value: observability
+                effect: NoSchedule
             resources:
               requests: { cpu: 10m, memory: 24Mi }
               limits: { cpu: 50m, memory: 48Mi }
