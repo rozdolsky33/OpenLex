@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { loginUser, registerUser } from "./auth";
+import { getMe, loginUser, registerUser } from "./auth";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -57,5 +57,35 @@ describe("registerUser", () => {
       email: "tenant@example.com",
       password: "supersecret1",
     });
+  });
+});
+
+describe("getMe", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("fetches /auth/me and returns the parsed tier/usage status", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse(200, {
+        email: "steve@example.com",
+        tier: "gold",
+        request_count: 12,
+        request_limit: 50,
+        period_reset_at: "2026-07-12T18:00:00Z",
+      }),
+    );
+
+    const status = await getMe();
+
+    const [url] = vi.mocked(fetch).mock.calls[0];
+    expect(String(url)).toContain("/auth/me");
+    expect(status.tier).toBe("gold");
+    expect(status.request_count).toBe(12);
+    expect(status.request_limit).toBe(50);
   });
 });

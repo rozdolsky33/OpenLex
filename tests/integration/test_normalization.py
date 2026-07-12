@@ -44,3 +44,18 @@ def test_normalize_statute_missing_active_date_does_not_raise() -> None:
     del raw["activeDate"]
     normalized = normalize_statute(raw)
     assert normalized["effective_date"] is None
+
+
+def test_normalize_statute_strips_literal_backslash_n_line_wraps() -> None:
+    # The fixture's raw text has literal two-character "\n" sequences mid-sentence (the NY
+    # Open Legislation API's own line-wrap marker, not real newlines -- verified: zero actual
+    # newline characters in the raw fixture). Left alone these show up verbatim in citation
+    # snippets and glue adjacent words into one token ("tenant\nshall").
+    raw = _load_fixture()
+    assert "\\n" in raw["text"]  # sanity check the fixture still reproduces the bug
+
+    normalized = normalize_statute(raw)
+
+    assert "\\n" not in normalized["text"]
+    assert "\n" not in normalized["text"]
+    assert "tenant shall include" in normalized["text"]

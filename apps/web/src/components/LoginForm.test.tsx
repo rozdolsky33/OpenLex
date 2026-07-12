@@ -19,6 +19,15 @@ describe("LoginForm", () => {
     const loginSpy = vi
       .spyOn(authApi, "loginUser")
       .mockResolvedValue({ access_token: "t", token_type: "bearer" });
+    // AuthContext's login() also fetches /auth/me right after a successful login to populate
+    // tier/usage state -- mocked here so this test stays scoped to the form's own behavior.
+    vi.spyOn(authApi, "getMe").mockResolvedValue({
+      email: "tenant@example.com",
+      tier: "silver",
+      request_count: 0,
+      request_limit: 15,
+      period_reset_at: new Date().toISOString(),
+    });
     const user = userEvent.setup();
     renderLoginForm();
 

@@ -20,12 +20,23 @@ export interface Citation {
   snippet: string;
 }
 
+export type Tier = "silver" | "gold" | "platinum";
+
+export interface UserStatus {
+  email: string;
+  tier: Tier;
+  request_count: number;
+  request_limit: number;
+  period_reset_at: string;
+}
+
 export interface QueryResponse {
   answer: string;
   citations: Citation[];
   abstained: boolean;
   disclaimer: string;
   conversation_id: string | null;
+  usage: UserStatus | null;
 }
 
 export interface UserCreate {

@@ -1,12 +1,13 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from legal_models.schemas import HealthResponse
 from legal_retrieval.embeddings import _get_model
 from openlex_shared.config import settings
 from openlex_shared.db import get_session
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -52,3 +53,10 @@ async def healthz(session: AsyncSession = Depends(get_session)) -> HealthRespons
         db=db_ok,
         embedding_model_loaded=model_loaded,
     )
+
+
+@app.get("/metrics")
+async def metrics() -> Response:
+    # Minimal, tier-labeled counters only (see openlex_api.quota) -- full auto-instrumented
+    # request-latency histograms are a separate, broader observability pass (GA roadmap Phase 3).
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)

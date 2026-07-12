@@ -29,12 +29,25 @@ DISCLAIMER = (
 )
 
 
+class UserStatus(BaseModel):
+    """A user's SaaS tier and current rolling-window quota usage -- see
+    apps/api/src/openlex_api/quota.py. Returned by GET /auth/me and attached to every
+    QueryResponse so the frontend can update the tier/usage badge without a second request."""
+
+    email: EmailStr
+    tier: Literal["silver", "gold", "platinum"]
+    request_count: int
+    request_limit: int
+    period_reset_at: datetime
+
+
 class QueryResponse(BaseModel):
     answer: str
     citations: list[Citation]
     abstained: bool
     disclaimer: str = DISCLAIMER
     conversation_id: str | None = None
+    usage: UserStatus | None = None
 
 
 class IngestRequest(BaseModel):
