@@ -7,10 +7,17 @@ spec:
   description: OpenLex workload on the local kind cluster
   sourceRepos:
     - https://github.com/rozdolsky33/OpenLex.git
+    # Helm chart sources for the observability stack (see
+    # docs/superpowers/specs/2026-07-12-production-observability-design.md) — each
+    # Application below points at the upstream chart repo directly.
+    - https://prometheus-community.github.io/helm-charts
+    - https://open-telemetry.github.io/opentelemetry-helm-charts
   destinations:
     - namespace: openlex
       server: https://kubernetes.default.svc
     - namespace: argocd
+      server: https://kubernetes.default.svc
+    - namespace: observability
       server: https://kubernetes.default.svc
   clusterResourceWhitelist:
     - group: "*"
