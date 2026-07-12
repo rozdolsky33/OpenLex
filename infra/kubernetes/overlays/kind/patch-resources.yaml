@@ -72,11 +72,16 @@ spec:
           imagePullPolicy: IfNotPresent
           resources:
             requests:
-              cpu: 25m
-              memory: 96Mi
+              cpu: 250m
+              memory: 512Mi
             limits:
-              cpu: 100m
-              memory: 192Mi
+              cpu: 1000m
+              memory: 1Gi
+          # Same root cause as openlex-api's resource bump (see above): ingestion loads the
+          # same torch + sentence-transformers embedding model, and the original 100m/192Mi
+          # limits OOMKilled the worker the first time ingestion actually ran against kind
+          # (exitCode 137, reason OOMKilled) — this had never been exercised during Phase 1
+          # since ingestion wasn't run there. kind-only override, same as api's.
 ---
 apiVersion: apps/v1
 kind: StatefulSet
