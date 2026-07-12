@@ -8,7 +8,7 @@
     "id": { "type": "string", "format": "uuid" },
     "source": {
       "type": "string",
-      "description": "e.g. 'ny_open_legislation' | 'ny_official_reports_seed'"
+      "description": "e.g. 'ny_open_legislation' | 'courtlistener_seed'"
     },
     "doc_type": { "type": "string", "enum": ["statute", "case"] },
     "jurisdiction": { "type": "string", "default": "NY" },
