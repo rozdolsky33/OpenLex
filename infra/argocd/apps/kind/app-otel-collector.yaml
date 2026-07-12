@@ -16,6 +16,13 @@ spec:
         valueFiles:
           - $values/infra/monitoring/otel-collector/values-base.yaml
         valuesObject:
+          nodeSelector:
+            openlex.dev/workload: observability
+          tolerations:
+            - key: openlex.dev/workload
+              operator: Equal
+              value: observability
+              effect: NoSchedule
           resources:
             requests: { cpu: 25m, memory: 64Mi }
             limits: { cpu: 200m, memory: 256Mi }
