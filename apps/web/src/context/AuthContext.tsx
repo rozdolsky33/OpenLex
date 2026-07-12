@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { getMe, loginUser, registerUser } from "../api/auth";
 import { setUnauthorizedHandler } from "../api/client";
 import type { UserStatus } from "../api/types";
-import { clearToken, getToken, setToken } from "../api/storage";
+import { clearConversationId, clearToken, getToken, setToken } from "../api/storage";
 
 interface AuthContextValue {
   isAuthenticated: boolean;
@@ -24,6 +24,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     clearToken();
+    // Also drop any stored conversation_id: without this, logging in as a different demo
+    // user (Bob/Steve/Jennifer share one browser during a tier demo) would silently resume
+    // the previous user's conversation, and every fresh login would land on the bottom-pinned
+    // "continuing a previous conversation" view instead of the centered landing screen.
+    clearConversationId();
     setIsAuthenticated(false);
     setUser(null);
   }, []);
@@ -31,6 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setUnauthorizedHandler(() => {
       clearToken();
+      clearConversationId();
       setIsAuthenticated(false);
       setUser(null);
       setSessionExpired(true);

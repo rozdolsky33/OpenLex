@@ -1,12 +1,13 @@
 import { useEffect, useReducer, useState } from "react";
 import { postQuery } from "../api/query";
 import { ApiError } from "../api/errors";
-import { getConversationId } from "../api/storage";
+import { clearConversationId, getConversationId } from "../api/storage";
 import type { Citation, DocType } from "../api/types";
 import { useAuth } from "../context/AuthContext";
 import { ChatInput } from "./ChatInput";
 import { ConnectionStatus } from "./ConnectionStatus";
 import { ErrorBanner } from "./ErrorBanner";
+import { MessageBubble } from "./MessageBubble";
 import { MessageList } from "./MessageList";
 import { TierBadge } from "./TierBadge";
 
@@ -43,7 +44,10 @@ interface State {
 type Action =
   | { type: "add"; message: DisplayMessage }
   | { type: "pending" }
-  | { type: "settled" };
+  | { type: "settled" }
+  | { type: "reset" };
+
+const INITIAL_STATE: State = { messages: [], pending: false };
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
@@ -53,6 +57,8 @@ function reducer(state: State, action: Action): State {
       return { ...state, pending: true };
     case "settled":
       return { ...state, pending: false };
+    case "reset":
+      return INITIAL_STATE;
   }
 }
 
@@ -78,10 +84,17 @@ const EXAMPLE_QUESTIONS = [
 
 export function ChatPage() {
   const { logout, user, refreshUsage } = useAuth();
-  const [state, dispatch] = useReducer(reducer, { messages: [], pending: false });
+  const [state, dispatch] = useReducer(reducer, INITIAL_STATE);
   const [error, setError] = useState<string | null>(null);
   const [question, setQuestion] = useState("");
   const [docType, setDocType] = useState<DocType | "">("");
+
+  function handleNewChat() {
+    clearConversationId();
+    dispatch({ type: "reset" });
+    setError(null);
+    setQuestion("");
+  }
 
   useEffect(() => {
     if (getConversationId()) {
@@ -153,7 +166,11 @@ export function ChatPage() {
     }
   }
 
-  const hasMessages = state.messages.length > 0;
+  // A resumed conversation_id injects a system notice on mount (see the effect above) --
+  // that alone shouldn't switch to the bottom-pinned transcript layout with mostly empty
+  // space above it. Only an actual user/assistant exchange should.
+  const hasConversation = state.messages.some((message) => message.role !== "system");
+  const systemNotices = state.messages.filter((message) => message.role === "system");
 
   return (
     <div className="flex h-screen flex-col bg-gradient-to-b from-white to-slate-50">
@@ -162,13 +179,22 @@ export function ChatPage() {
         <div className="flex items-center gap-3">
           <ConnectionStatus />
           {user && <TierBadge user={user} />}
+          {hasConversation && (
+            <button
+              type="button"
+              onClick={handleNewChat}
+              className="rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+            >
+              New chat
+            </button>
+          )}
           <button type="button" onClick={logout} className="text-xs text-slate-500 underline">
             Log out
           </button>
         </div>
       </header>
 
-      {hasMessages ? (
+      {hasConversation ? (
         <>
           <MessageList messages={state.messages} pending={state.pending} />
           {error && <ErrorBanner message={error} />}
@@ -188,6 +214,13 @@ export function ChatPage() {
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center px-4 pb-24">
           <div className="w-full max-w-2xl text-center">
+            {systemNotices.length > 0 && (
+              <div className="mb-6 flex flex-col gap-2">
+                {systemNotices.map((notice) => (
+                  <MessageBubble key={notice.id} message={notice} />
+                ))}
+              </div>
+            )}
             <h2 className="text-2xl font-semibold text-balance text-slate-900">
               What do you need to know about NY landlord-tenant law?
             </h2>
