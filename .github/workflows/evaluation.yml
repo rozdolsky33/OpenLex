@@ -84,10 +84,19 @@ jobs:
           JWT_SECRET_KEY=ci-golden-questions-not-a-real-secret-32chars
           JWT_ALGORITHM=HS256
           JWT_EXPIRE_MINUTES=60
+          DEMO_SILVER_EMAIL=ci-golden-silver@example.com
+          DEMO_SILVER_PASSWORD=ci-golden-silver-not-a-real-password
+          DEMO_GOLD_EMAIL=ci-golden-gold@example.com
+          DEMO_GOLD_PASSWORD=ci-golden-gold-not-a-real-password
+          DEMO_PLATINUM_EMAIL=ci-golden-platinum@example.com
+          DEMO_PLATINUM_PASSWORD=ci-golden-platinum-not-a-real-password
           EOF
           # ANTHROPIC_MODEL overrides the production default (claude-sonnet-4-5) with Haiku
           # for this pass -- still real Claude calls against the real pipeline, just much
           # cheaper. See docs/decisions/0004-golden-question-report-and-pages.md.
+          # DEMO_* -- POST /auth/register is disabled (see routers/auth.py); the eval harness
+          # logs in as the seeded Platinum user instead (see the "Seed demo users" step below
+          # and tests/evaluation/test_golden_questions.py).
 
       - name: Start db, api, and worker
         if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true'
@@ -119,6 +128,14 @@ jobs:
       - name: Ingest golden-question seed statutes
         if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true'
         run: scripts/ingest.sh statutes
+
+      - name: Seed demo users
+        if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true'
+        run: scripts/seed-demo-users.sh
+        # POST /auth/register is disabled for this demo -- the eval harness's _auth_token
+        # fixture logs in as the seeded Platinum user, so it must exist before either
+        # evaluation pass runs. Seeded once against Postgres here; surviving the later
+        # api-container recreate for the Sonnet pass below since the DB itself isn't touched.
 
       - name: Check statute freshness
         if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'workflow_dispatch'
@@ -174,7 +191,16 @@ jobs:
           JWT_SECRET_KEY=ci-golden-questions-not-a-real-secret-32chars
           JWT_ALGORITHM=HS256
           JWT_EXPIRE_MINUTES=60
+          DEMO_SILVER_EMAIL=ci-golden-silver@example.com
+          DEMO_SILVER_PASSWORD=ci-golden-silver-not-a-real-password
+          DEMO_GOLD_EMAIL=ci-golden-gold@example.com
+          DEMO_GOLD_PASSWORD=ci-golden-gold-not-a-real-password
+          DEMO_PLATINUM_EMAIL=ci-golden-platinum@example.com
+          DEMO_PLATINUM_PASSWORD=ci-golden-platinum-not-a-real-password
           EOF
+          # DEMO_* values must match the Haiku .env write above verbatim -- the Platinum user
+          # was already seeded (hashed password) against those values; changing them here
+          # would make the eval harness's login attempt fail against the still-seeded row.
 
       - name: Recreate api with the new model
         if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'workflow_dispatch'

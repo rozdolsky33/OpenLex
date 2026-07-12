@@ -10,6 +10,9 @@ code correctness).
 ```bash
 docker compose up -d db api      # or the full stack
 scripts/ingest.sh statutes       # golden_questions.yaml expects the seeded statutes present
+scripts/seed-demo-users.sh       # POST /auth/register is disabled -- the harness logs in as
+                                  # the seeded Platinum demo user, see DEMO_PLATINUM_EMAIL/
+                                  # DEMO_PLATINUM_PASSWORD in .env.example
 scripts/evaluate.sh
 ```
 
