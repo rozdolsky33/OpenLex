@@ -13,6 +13,14 @@ grafana:
       label: grafana_dashboard
       labelValue: "1"
       searchNamespace: ALL
+    # grafana.sidecar.resources is a single key shared by every k8s-sidecar container the
+    # grafana subchart renders (dashboards + datasources here; see charts/grafana/templates/
+    # _pod.tpl, every sidecar container block reads .Values.sidecar.resources) — not
+    # per-sidecar. Environment-agnostic: these are small polling helper processes, not
+    # something kind vs. eks-demo should size differently.
+    resources:
+      requests: { cpu: 10m, memory: 32Mi }
+      limits: { cpu: 50m, memory: 64Mi }
 
 alertmanager:
   enabled: true
@@ -26,3 +34,22 @@ prometheus:
     serviceMonitorNamespaceSelector: {}
     podMonitorSelectorNilUsesHelmValues: false
     podMonitorNamespaceSelector: {}
+
+prometheusOperator:
+  # Prometheus Operator's own container resources — the operator control-loop process
+  # itself, distinct from the Prometheus/Alertmanager instances it manages.
+  # Environment-agnostic: same small control-plane process regardless of kind vs. eks-demo.
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits: { cpu: 100m, memory: 128Mi }
+  prometheusConfigReloader:
+    # Not a container resources field directly — the operator reads these values and passes
+    # them as --config-reloader-{cpu,memory}-{request,limit} flags on its own container args
+    # (templates/prometheus-operator/deployment.yaml), which it then applies to every
+    # config-reloader sidecar it creates on Prometheus AND Alertmanager StatefulSets alike
+    # (one operator, one shared reloader resource config — verified against the chart
+    # template, not assumed). Environment-agnostic: same tiny reload-on-change sidecar
+    # regardless of environment.
+    resources:
+      requests: { cpu: 10m, memory: 32Mi }
+      limits: { cpu: 50m, memory: 64Mi }
