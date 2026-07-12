@@ -21,8 +21,10 @@ export function AuthScreen() {
       />
 
       <div className="relative z-10 w-full max-w-sm text-center">
-        <h1 className="text-lg font-semibold text-white">OpenLex</h1>
-        <p className="mx-auto mt-2 max-w-xs text-sm text-slate-300">
+        <h1 className="font-serif text-5xl font-bold tracking-tight text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.45)] sm:text-6xl">
+          Open<span className="text-amber-400">Lex</span>
+        </h1>
+        <p className="mx-auto mt-3 max-w-xs text-sm text-slate-300">
           NY landlord-tenant law, answered from the actual statutes and case law — with
           citations, every time.
         </p>
