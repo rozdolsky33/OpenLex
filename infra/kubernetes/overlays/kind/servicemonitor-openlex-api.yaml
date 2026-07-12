@@ -1,0 +1,18 @@
+# infra/kubernetes/overlays/kind/servicemonitor-openlex-api.yaml
+#
+# kind-only: base/api is shared with the eks-demo overlay, which has no ServiceMonitor CRD
+# installed. See Task 5 of docs/superpowers/plans/2026-07-12-observability-phase1-infra-plumbing.md.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: openlex-api
+  labels:
+    app.kubernetes.io/name: openlex-api
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openlex-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

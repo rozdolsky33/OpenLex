@@ -1,0 +1,65 @@
+# infra/monitoring/kube-prometheus-stack/values-base.yaml
+#
+# Shared base values for kube-prometheus-stack, consumed by both the kind Application
+# (infra/argocd/apps/kind/app-kube-prometheus-stack.yaml) and any future eks-demo
+# Application, via ArgoCD's multi-source `$values` reference. Environment-specific overrides
+# (resource sizing, storage) live in each Application's own inline `valuesObject`, not here —
+# see the design doc's "Local kind vs EKS-demo consistency" section.
+
+grafana:
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+    # grafana.sidecar.resources is a single key shared by every k8s-sidecar container the
+    # grafana subchart renders (dashboards + datasources here; see charts/grafana/templates/
+    # _pod.tpl, every sidecar container block reads .Values.sidecar.resources) — not
+    # per-sidecar. Environment-agnostic: these are small polling helper processes, not
+    # something kind vs. eks-demo should size differently.
+    #
+    # 64Mi (the original limit) was too low in practice: both grafana-sc-dashboard and
+    # grafana-sc-datasources were OOMKilled (exitCode 137) on every start, which left the
+    # Grafana pod stuck at 1/3 Ready/CrashLoopBackOff and meant no dashboards/datasources
+    # ever synced in (see Task 7's verification report). These sidecars run with
+    # searchNamespace: ALL, which means k8s-sidecar list-watches ConfigMaps across every
+    # namespace in the cluster (not just the 29 grafana_dashboard=1-labeled ones) to find
+    # the ones it cares about — with ArgoCD/cert-manager/etc. also in this cluster, that
+    # working set exceeded 64Mi. Bumped to 256Mi limit / 64Mi request; confirmed empirically
+    # post-upgrade that restart counts stop climbing (see Task 7 follow-up report).
+    resources:
+      requests: { cpu: 10m, memory: 64Mi }
+      limits: { cpu: 50m, memory: 256Mi }
+
+alertmanager:
+  enabled: true
+
+prometheus:
+  prometheusSpec:
+    # Without these two, Prometheus only selects ServiceMonitors/PodMonitors carrying this
+    # chart's own release label — openlex-api's ServiceMonitor (Task 5, a different
+    # namespace, no such label) would silently never be scraped.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorNamespaceSelector: {}
+    podMonitorSelectorNilUsesHelmValues: false
+    podMonitorNamespaceSelector: {}
+
+prometheusOperator:
+  # Prometheus Operator's own container resources — the operator control-loop process
+  # itself, distinct from the Prometheus/Alertmanager instances it manages.
+  # Environment-agnostic: same small control-plane process regardless of kind vs. eks-demo.
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits: { cpu: 100m, memory: 128Mi }
+  prometheusConfigReloader:
+    # Not a container resources field directly — the operator reads these values and passes
+    # them as --config-reloader-{cpu,memory}-{request,limit} flags on its own container args
+    # (templates/prometheus-operator/deployment.yaml), which it then applies to every
+    # config-reloader sidecar it creates on Prometheus AND Alertmanager StatefulSets alike
+    # (one operator, one shared reloader resource config — verified against the chart
+    # template, not assumed). Environment-agnostic: same tiny reload-on-change sidecar
+    # regardless of environment.
+    resources:
+      requests: { cpu: 10m, memory: 32Mi }
+      limits: { cpu: 50m, memory: 64Mi }

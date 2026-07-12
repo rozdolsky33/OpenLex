@@ -26,13 +26,17 @@ file-level detail for each item live in
 - [x] 2.3 `handle_query_turn` scopes loads by `user_id`; cross-user access returns 404
 - [x] 2.4 Integration test (`tests/integration/test_conversations.py`) covers cross-user denial
 
-## Phase 3 — Production observability 🔴 blocker (partially done via Phase 1)
-- [ ] 3.1 Structured JSON logging in `apps/api` + `apps/worker`, repo-wide (Phase 1 only covers quota events)
-- [ ] 3.2 Error tracking (Sentry or equivalent) wired behind `SENTRY_DSN`
-- [x] 3.3 `/metrics` endpoint exposed (done in Phase 1 — still needs request-latency histograms via `prometheus-fastapi-instrumentator`)
-- [ ] 3.4 Real Prometheus scrape config (replaces placeholder README)
-- [ ] 3.5 One working Grafana dashboard checked into the repo (include a tier-breakdown panel)
-- [ ] 3.6 Prometheus scrape wired onto k8s deployments
+## Phase 3 — Production observability 🔴 blocker (superseded by expanded design)
+See `docs/superpowers/specs/2026-07-12-production-observability-design.md` (approved) and
+its per-phase implementation plans under `docs/superpowers/plans/2026-07-12-observability-phase*.md`.
+- [x] 3.3 `/metrics` endpoint exposed (done in the original Phase 1 tier-quota work)
+- [ ] 3.2 Error tracking (Sentry or equivalent) — still explicitly out of scope; separate
+      cost/compliance decision, not part of the observability design
+- [x] 3.7 Observability Phase 1: kube-prometheus-stack + OTel Collector infra plumbing on kind
+- [ ] 3.8 Observability Phase 2: `apps/api` backend tracing (Tempo + Jaeger dual-export)
+- [ ] 3.9 Observability Phase 3: `apps/worker` + `postgres_exporter`
+- [ ] 3.10 Observability Phase 4: `apps/web` browser tracing
+- [ ] 3.11 Observability Phase 5: Loki logs + dashboards + Alertmanager rules
 
 ## Phase 4 — Legal/compliance content 🔴 blocker
 - [ ] 4.1 ToS/Privacy route + page live in `apps/web`, linked from auth screens

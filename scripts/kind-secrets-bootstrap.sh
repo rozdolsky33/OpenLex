@@ -16,9 +16,15 @@ if [ ! -f .env ]; then
 fi
 
 kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
+
+# .env's DATABASE_URL points at `db` (docker-compose's Postgres service name) — in kind, the
+# Postgres Service is named `postgres` (infra/kubernetes/base/postgres/service.yaml). Rewrite
+# just the host on the way into the Secret so the same .env works for both without editing it
+# by hand; discovered while bootstrapping observability Phase 1 (api's /healthz reported
+# `db: false` until this was fixed).
 kubectl create secret generic openlex-secrets \
   --namespace "${NAMESPACE}" \
-  --from-env-file=.env \
+  --from-env-file=<(sed -E 's#(DATABASE_URL=.*@)db(:[0-9]+/)#\1postgres\2#' .env) \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "openlex-secrets created/updated in namespace '${NAMESPACE}' from .env."
