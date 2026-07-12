@@ -232,12 +232,58 @@ claimed:
 Each phase leaves `main` deployable, per the roadmap's global constraint — no phase depends on
 a later phase's code existing first.
 
+## Local kind vs EKS-demo consistency
+
+Only `kind` is being deployed in this pass — `eks-demo` observability stays deferred, same
+call `aws-eks-cost-estimate.md` already made ("skip until there's real traffic worth
+alerting on"). But every component is structured now so that deferral is a values-file diff
+later, not a redesign:
+
+- **Shared Helm values, per-environment overrides.** Each chart gets an
+  `infra/monitoring/<component>/values-base.yaml` checked into the repo (chart version pin,
+  common labels, dashboard/rule config), referenced via `helm.valueFiles` from the `kind`
+  Application now and from a future `eks-demo` Application later. Each environment's
+  Application supplies only its own `valuesObject` for what's genuinely
+  environment-specific: storage class (`local-path` on kind vs. `gp3` on eks), replica count,
+  and ingress. Same chart, same version, same alert rules — environments differ only where
+  they must.
+- **Alert rule definitions are environment-agnostic.** The five `PrometheusRule` alerts live
+  in one file, applied identically to whichever cluster's `kube-prometheus-stack` is running.
+  Only the **receiver** differs: kind routes to `null`/log (no real pager exists locally);
+  `eks-demo` would route to a Slack webhook sourced via `ExternalSecret` — the same
+  secret-injection mechanism `overlays/eks-demo/externalsecret-openlex.yaml` already uses for
+  `openlex-secrets`, not a new pattern.
+- **`pg_stat_statements` is already consistent by construction.** `shared_preload_libraries`
+  is set once in `infra/kubernetes/base/postgres/statefulset.yaml` — the shared base both
+  overlays consume — not per-overlay, so `kind` and any future `eks-demo` Postgres pick it up
+  identically with zero extra work.
+- **Browser OTLP export does not carry over to `eks-demo` as-is.** kind's port-forwarded
+  Collector endpoint is fine on a trusted local machine; `eks-demo` is public-facing, so
+  routing the same OTLP ingestion endpoint through the public `ingress-nginx` would mean an
+  unauthenticated telemetry-injection endpoint on the internet. Flagged explicitly rather than
+  silently assumed portable — browser tracing on `eks-demo` needs auth/rate-limiting in front
+  of the Collector's HTTP receiver first, a real follow-up design question, not part of this
+  pass.
+- **The Collector endpoint is config-driven, not hardcoded.** `apps/api`/`apps/worker` read
+  `OTEL_EXPORTER_OTLP_ENDPOINT` from `openlex_shared.config.Settings` (same precedent as
+  `cors_allow_origins` — never hardcode config that belongs there), defaulting to the in-cluster
+  Collector's Service DNS (`http://otel-collector.observability.svc.cluster.local:4318`). Each
+  overlay sets it to its own cluster's Collector; app code never changes between environments.
+- **Cost honesty if `eks-demo` enables this later:** its current topology is a single Spot
+  `t4g.medium` (2 vCPU/4GB) sized for the app alone; the same 6-component stack (even at
+  kind's low resource requests) will not fit alongside it — realistically needs a second node
+  or a bump to `t4g.large`. `docs/infrastructure/aws-eks-cost-estimate.md` now reflects this
+  (~$15–25/mo) in place of the old vague "Managed Prometheus, optional, $0" line, so the cost
+  doc describes the design this repo actually standardizes on, not a hypothetical managed
+  alternative.
+
 ## Risks and open questions
 
-| Risk | Mitigation |
+| Risk | Resolution |
 |---|---|
-| SLO thresholds (99% availability, 3s/6s latency) are guesses with no real traffic behind them | Centralized in this doc and the eventual alert-rule files, easy to retune once real usage data exists |
-| Alertmanager has no real receiver configured | Explicit `null`/log receiver for now; swapping in Slack/PagerDuty is a config change, not a redesign |
-| Running 6 new Helm-deployed components on a laptop-scale kind cluster is a meaningful resource add | All in single-binary/all-in-one modes with low explicit resource requests; will re-tune from `kubectl top pods` if tight |
-| Browser OTLP export requires new port-forward + env var plumbing that doesn't exist yet for `apps/web` | Scoped as its own explicit task (Phase 4), not glossed over as "just add a library" |
-| `pg_stat_statements` requires a Postgres server restart (`shared_preload_libraries`) | Explicit task in Phase 3, not a silent assumption that the exporter alone is sufficient |
+| SLO thresholds (99% availability, 3s/6s latency) are guesses with no real traffic behind them | Defined once in the shared `PrometheusRule` file (see above), applied identically wherever it runs — retuning after real traffic is a single edit, not a per-environment chase |
+| Alertmanager has no real receiver configured | Kind routes to `null`/log now; `eks-demo` (when enabled) routes the same rule file to a Slack receiver via `ExternalSecret`, matching the existing `openlex-secrets` pattern — receiver is the only per-environment piece |
+| Running 6 new Helm-deployed components on a laptop-scale kind cluster is a meaningful resource add | All in single-binary/all-in-one modes with low explicit resource requests defined in the shared base values files; will re-tune from `kubectl top pods` if tight |
+| Browser OTLP export requires new port-forward + env var plumbing that doesn't exist yet for `apps/web` | Scoped as its own explicit task (Phase 4). Confirmed **kind-only** — carrying it to `eks-demo` needs an auth/rate-limiting layer in front of the Collector first, called out above rather than assumed |
+| `pg_stat_statements` requires a Postgres server restart (`shared_preload_libraries`) | Explicit task in Phase 3, applied in `infra/kubernetes/base/postgres` — already consistent across both overlays by construction, not a kind-only fix |
+| Enabling this stack on `eks-demo` later needs more compute than the current single `t4g.medium` provides | `aws-eks-cost-estimate.md` now carries the real estimate (~$15–25/mo, second node or `t4g.large`) so it's a known, budgeted decision rather than a surprise when someone flips it on |
