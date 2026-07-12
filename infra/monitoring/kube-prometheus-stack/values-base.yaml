@@ -1,0 +1,28 @@
+# infra/monitoring/kube-prometheus-stack/values-base.yaml
+#
+# Shared base values for kube-prometheus-stack, consumed by both the kind Application
+# (infra/argocd/apps/kind/app-kube-prometheus-stack.yaml) and any future eks-demo
+# Application, via ArgoCD's multi-source `$values` reference. Environment-specific overrides
+# (resource sizing, storage) live in each Application's own inline `valuesObject`, not here —
+# see the design doc's "Local kind vs EKS-demo consistency" section.
+
+grafana:
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+
+alertmanager:
+  enabled: true
+
+prometheus:
+  prometheusSpec:
+    # Without these two, Prometheus only selects ServiceMonitors/PodMonitors carrying this
+    # chart's own release label — openlex-api's ServiceMonitor (Task 5, a different
+    # namespace, no such label) would silently never be scraped.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorNamespaceSelector: {}
+    podMonitorSelectorNilUsesHelmValues: false
+    podMonitorNamespaceSelector: {}

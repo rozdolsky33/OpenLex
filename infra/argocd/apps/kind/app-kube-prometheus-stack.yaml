@@ -1,0 +1,53 @@
+# infra/argocd/apps/kind/app-kube-prometheus-stack.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: openlex-kind
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: kube-prometheus-stack
+      targetRevision: "87.15.*"
+      helm:
+        valueFiles:
+          - $values/infra/monitoring/kube-prometheus-stack/values-base.yaml
+        valuesObject:
+          prometheus:
+            prometheusSpec:
+              retention: 6h
+              resources:
+                requests: { cpu: 100m, memory: 400Mi }
+                limits: { cpu: 500m, memory: 800Mi }
+          alertmanager:
+            alertmanagerSpec:
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits: { cpu: 100m, memory: 64Mi }
+          grafana:
+            resources:
+              requests: { cpu: 25m, memory: 96Mi }
+              limits: { cpu: 100m, memory: 192Mi }
+          kube-state-metrics:
+            resources:
+              requests: { cpu: 10m, memory: 32Mi }
+              limits: { cpu: 50m, memory: 64Mi }
+          prometheus-node-exporter:
+            resources:
+              requests: { cpu: 10m, memory: 24Mi }
+              limits: { cpu: 50m, memory: 48Mi }
+    - repoURL: https://github.com/rozdolsky33/OpenLex.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
