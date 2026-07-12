@@ -10,11 +10,36 @@ spec:
           imagePullPolicy: IfNotPresent
           resources:
             requests:
-              cpu: 25m
-              memory: 96Mi
+              cpu: 250m
+              memory: 512Mi
             limits:
-              cpu: 100m
-              memory: 192Mi
+              cpu: 1000m
+              memory: 1Gi
+          # The Dockerfile's `uv run` re-syncs the venv on every container start (visible as
+          # "Ignoring existing virtual environment linked to non-existent Python interpreter"
+          # in pod logs) and the embedding model (torch + sentence-transformers, downloaded
+          # fresh from HuggingFace every cold start — no baked-in weights, no persistent HF
+          # cache volume) is preloaded at startup. Under the original 100m CPU / 192Mi memory
+          # limits this never finished within any reasonable liveness window — confirmed via
+          # `kubectl logs` always stopping at "Waiting for application startup" and exit code
+          # 137 from the liveness kill, not an actual crash. kind-only override (not the
+          # shared base, which eks-demo also uses) discovered while bootstrapping
+          # observability Phase 1 — the underlying re-sync-on-start behavior and lack of a
+          # model cache volume are separate, out-of-scope fixes.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 90
+            periodSeconds: 15
+            failureThreshold: 5
 ---
 apiVersion: apps/v1
 kind: Deployment
