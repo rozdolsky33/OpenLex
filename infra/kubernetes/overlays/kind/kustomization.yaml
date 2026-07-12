@@ -10,6 +10,7 @@ resources:
   - ../../base/api
   - ../../base/worker
   - servicemonitor-openlex-api.yaml
+  - pdb-openlex-api.yaml
 
 # Images are built + `kind load docker-image`-ed locally (kind can't pull from nowhere) —
 # see scripts/kind-up.sh. Tags here must match what was loaded.

@@ -1,0 +1,15 @@
+# infra/kubernetes/overlays/kind/pdb-openlex-api.yaml
+#
+# kind-only: assumes the 2-replica setup from patch-resources.yaml. Ensures at least 1
+# replica survives a voluntary disruption (node drain, kubectl evict) — this is what actually
+# backs the "HA" claim of running 2 replicas with anti-affinity; without it, a node drain could
+# legally evict both replicas at once.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: openlex-api
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openlex-api
