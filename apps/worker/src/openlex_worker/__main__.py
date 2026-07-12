@@ -24,7 +24,7 @@ def _heartbeat_loop() -> None:
         time.sleep(HEARTBEAT_INTERVAL_SECONDS)
 
 
-if __name__ == "__main__":
+def main() -> None:
     args = build_parser().parse_args()
 
     if args.command == "ingest":
@@ -34,3 +34,7 @@ if __name__ == "__main__":
     else:
         # No args (e.g. `docker compose up worker`'s CMD) -- keep the container alive.
         _heartbeat_loop()
+
+
+if __name__ == "__main__":
+    main()

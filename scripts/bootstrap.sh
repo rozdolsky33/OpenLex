@@ -9,5 +9,6 @@ if [ ! -f .env ]; then
 fi
 
 uv sync --all-packages
+uv run pre-commit install
 docker compose up --build -d
 docker compose ps

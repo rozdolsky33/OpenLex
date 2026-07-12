@@ -16,6 +16,8 @@ dev = [
     "mypy>=1.13.0",
     "pytest>=8.3.4",
     "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "pre-commit>=4.0.0",
     "httpx>=0.28.1",
     "pyyaml>=6.0.3",
     "jinja2>=3.1.6",
@@ -47,10 +49,41 @@ exclude = ["tests/fixtures"]
 # found twice under different module names").
 explicit_package_bases = true
 
+# Incremental strict-mode rollout: start with the smallest, most-depended-on packages rather
+# than flipping `strict = true` workspace-wide (which would surface a wall of errors at once).
+# Expand this list package-by-package as each is made clean, largest/most-churned last.
+[[tool.mypy.overrides]]
+module = ["openlex_shared.*", "legal_models.*"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_any_generics = true
+disallow_untyped_decorators = true
+check_untyped_defs = true
+warn_return_any = true
+no_implicit_optional = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["apps", "packages", "tests"]
 markers = [
     "evaluation: golden-question legal-accuracy eval -- hits a live API + real Claude, costs money and needs a running server. Excluded from the default run; use scripts/evaluate.sh.",
 ]
-addopts = "-m 'not evaluation'"
+addopts = "-m 'not evaluation' --cov --cov-report=term-missing"
+
+[tool.coverage.run]
+# Each workspace member's src/ dir is listed explicitly (not just "apps"/"packages") because
+# coverage.py's unexecuted-file discovery doesn't reliably recurse into sibling src-layout
+# packages sharing one parent dir -- pointed at the bare "apps" dir, a package with zero
+# executed statements (e.g. apps/worker, which has no test suite yet) silently disappears
+# from the report instead of showing as 0%, hiding exactly the gap this config exists to
+# surface. Add a new line here when a new app/package joins [tool.uv.workspace].members.
+source = [
+    "apps/api/src",
+    "apps/worker/src",
+    "packages/legal_generation/src",
+    "packages/legal_models/src",
+    "packages/legal_parsing/src",
+    "packages/legal_retrieval/src",
+    "packages/shared/src",
+]
+omit = ["*/tests/*"]

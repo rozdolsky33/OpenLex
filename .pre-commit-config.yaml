@@ -1,0 +1,38 @@
+# Local pre-merge gate, belt-and-suspenders with .claude/hooks/format-python.sh (which only
+# runs for edits Claude Code itself makes) and .github/workflows/*.yml (which only catches
+# problems after a push). Install with `pre-commit install` (scripts/bootstrap.sh does this
+# automatically); run on demand with `pre-commit run --all-files`.
+#
+# ruff-check/ruff-format run with --fix / in-place here (auto-fix, matching the Claude Code
+# hook's behavior) while CI's `ruff check`/`ruff format --check` (.github/workflows/api.yml,
+# pipelines.yml) run fail-only, without --fix. That asymmetry is intentional, not drift: local
+# hooks fix, CI verifies nothing was missed.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check --fix
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types: [python]
+
+      - id: mypy
+        name: mypy (workspace)
+        # Matches CLAUDE.md's documented `uv run mypy apps packages` invocation exactly --
+        # don't pass a changed-files list here, `explicit_package_bases` in pyproject.toml
+        # already documents why mixing arbitrary path subsets breaks module-name inference.
+        entry: uv run mypy apps packages
+        language: system
+        types: [python]
+        pass_filenames: false
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
