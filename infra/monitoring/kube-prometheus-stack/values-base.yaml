@@ -18,9 +18,19 @@ grafana:
     # _pod.tpl, every sidecar container block reads .Values.sidecar.resources) — not
     # per-sidecar. Environment-agnostic: these are small polling helper processes, not
     # something kind vs. eks-demo should size differently.
+    #
+    # 64Mi (the original limit) was too low in practice: both grafana-sc-dashboard and
+    # grafana-sc-datasources were OOMKilled (exitCode 137) on every start, which left the
+    # Grafana pod stuck at 1/3 Ready/CrashLoopBackOff and meant no dashboards/datasources
+    # ever synced in (see Task 7's verification report). These sidecars run with
+    # searchNamespace: ALL, which means k8s-sidecar list-watches ConfigMaps across every
+    # namespace in the cluster (not just the 29 grafana_dashboard=1-labeled ones) to find
+    # the ones it cares about — with ArgoCD/cert-manager/etc. also in this cluster, that
+    # working set exceeded 64Mi. Bumped to 256Mi limit / 64Mi request; confirmed empirically
+    # post-upgrade that restart counts stop climbing (see Task 7 follow-up report).
     resources:
-      requests: { cpu: 10m, memory: 32Mi }
-      limits: { cpu: 50m, memory: 64Mi }
+      requests: { cpu: 10m, memory: 64Mi }
+      limits: { cpu: 50m, memory: 256Mi }
 
 alertmanager:
   enabled: true
