@@ -106,7 +106,7 @@ than reopening the tier-quota design.
 
 ---
 
-## Phase 2 — Conversation authorization (cross-tenant data exposure) 🔴
+## Phase 2 — Conversation authorization (cross-tenant data exposure) 🔴 ✅ implemented 2026-07-12
 
 **Why:** `apps/api/src/openlex_api/routers/query.py`'s own comment admits any authenticated
 user holding a `conversation_id` (a UUID, easy to guess-adjacent if sequential access patterns

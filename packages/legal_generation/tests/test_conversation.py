@@ -56,6 +56,7 @@ def _mock_session_that_assigns_id_on_flush() -> AsyncMock:
 async def test_handle_query_turn_creates_a_new_conversation_when_none_given() -> None:
     session = _mock_session_that_assigns_id_on_flush()
     generated = QueryResponse(answer="A tenant is defined as...", citations=[], abstained=False)
+    user_id = uuid.uuid4()
 
     with (
         patch(
@@ -65,17 +66,32 @@ async def test_handle_query_turn_creates_a_new_conversation_when_none_given() ->
         patch("legal_generation.conversation.hybrid_search", AsyncMock(return_value=[PASSAGE])),
         patch("legal_generation.conversation.generate_answer", AsyncMock(return_value=generated)),
     ):
-        response = await handle_query_turn(session, "what is a tenant?")
+        response = await handle_query_turn(session, "what is a tenant?", user_id=user_id)
 
     assert response.conversation_id is not None
     assert response.answer == "A tenant is defined as..."
     session.commit.assert_awaited_once()
 
+    created_conversation = session.add.call_args_list[0].args[0]
+    assert isinstance(created_conversation, Conversation)
+    assert created_conversation.user_id == user_id
+
+
+def _execute_result(*, first: object = None, all_: list | None = None) -> MagicMock:
+    """Build a fake `session.execute(...)` return value supporting either
+    `.scalars().first()` (conversation lookup) or `.scalars().all()` (message history)."""
+    scalars_result = MagicMock()
+    scalars_result.first.return_value = first
+    scalars_result.all.return_value = all_ or []
+    execute_result = MagicMock()
+    execute_result.scalars.return_value = scalars_result
+    return execute_result
+
 
 async def test_handle_query_turn_loads_history_for_an_existing_conversation() -> None:
     conversation_id = uuid.uuid4()
+    user_id = uuid.uuid4()
     session = AsyncMock(spec=AsyncSession)
-    session.get.return_value = Conversation(id=conversation_id)
 
     prior_message = Message(
         conversation_id=conversation_id,
@@ -86,11 +102,10 @@ async def test_handle_query_turn_loads_history_for_an_existing_conversation() ->
         citations=[],
         abstained=False,
     )
-    scalars_result = MagicMock()
-    scalars_result.all.return_value = [prior_message]
-    execute_result = MagicMock()
-    execute_result.scalars.return_value = scalars_result
-    session.execute.return_value = execute_result
+    session.execute.side_effect = [
+        _execute_result(first=Conversation(id=conversation_id, user_id=user_id)),
+        _execute_result(all_=[prior_message]),
+    ]
 
     generated = QueryResponse(answer="Yes, pets are allowed...", citations=[], abstained=False)
     mock_reformulate = AsyncMock(return_value="does the lease allow pets?")
@@ -103,7 +118,7 @@ async def test_handle_query_turn_loads_history_for_an_existing_conversation() ->
         ) as mock_generate,
     ):
         response = await handle_query_turn(
-            session, "what about pets?", conversation_id=str(conversation_id)
+            session, "what about pets?", conversation_id=str(conversation_id), user_id=user_id
         )
 
     assert response.conversation_id == str(conversation_id)
@@ -120,10 +135,12 @@ async def test_handle_query_turn_raises_conversation_not_found_for_unknown_conve
     None
 ):
     session = AsyncMock(spec=AsyncSession)
-    session.get.return_value = None
+    session.execute.return_value = _execute_result(first=None)
 
     with pytest.raises(ConversationNotFound):
-        await handle_query_turn(session, "what about pets?", conversation_id=str(uuid.uuid4()))
+        await handle_query_turn(
+            session, "what about pets?", conversation_id=str(uuid.uuid4()), user_id=uuid.uuid4()
+        )
 
 
 async def test_handle_query_turn_raises_conversation_not_found_for_malformed_conversation_id() -> (
@@ -132,7 +149,9 @@ async def test_handle_query_turn_raises_conversation_not_found_for_malformed_con
     session = AsyncMock(spec=AsyncSession)
 
     with pytest.raises(ConversationNotFound):
-        await handle_query_turn(session, "what about pets?", conversation_id="not-a-valid-uuid")
+        await handle_query_turn(
+            session, "what about pets?", conversation_id="not-a-valid-uuid", user_id=uuid.uuid4()
+        )
 
 
 async def test_handle_query_turn_persists_the_new_turn_and_commits() -> None:
@@ -151,7 +170,7 @@ async def test_handle_query_turn_persists_the_new_turn_and_commits() -> None:
         patch("legal_generation.conversation.hybrid_search", AsyncMock(return_value=[PASSAGE])),
         patch("legal_generation.conversation.generate_answer", AsyncMock(return_value=generated)),
     ):
-        await handle_query_turn(session, "what is a tenant?")
+        await handle_query_turn(session, "what is a tenant?", user_id=uuid.uuid4())
 
     persisted = session.add.call_args_list[-1].args[0]
     assert isinstance(persisted, Message)

@@ -113,7 +113,12 @@ def test_query_passes_question_conversation_id_top_k_and_doc_type_through() -> N
     mock_handle.assert_awaited_once()
     call_args, call_kwargs = mock_handle.call_args
     assert call_args[1] == "how much notice?"
-    assert call_kwargs == {"conversation_id": "abc", "top_k": 3, "doc_type": "statute"}
+    assert call_kwargs == {
+        "conversation_id": "abc",
+        "top_k": 3,
+        "doc_type": "statute",
+        "user_id": FAKE_USER.id,
+    }
 
 
 def test_query_returns_404_when_conversation_id_is_unknown() -> None:

@@ -24,10 +24,10 @@ class ConversationNotFound(Exception):
 
 
 async def _load_conversation(
-    session: AsyncSession, conversation_id: str | None
+    session: AsyncSession, conversation_id: str | None, user_id: uuid.UUID
 ) -> tuple[Conversation, list[ConversationTurn]]:
     if conversation_id is None:
-        conversation = Conversation()
+        conversation = Conversation(user_id=user_id)
         session.add(conversation)
         await session.flush()  # assigns conversation.id, needed for the Message FK below
         return conversation, []
@@ -37,7 +37,20 @@ async def _load_conversation(
     except ValueError as exc:
         raise ConversationNotFound(f"conversation {conversation_id} not found") from exc
 
-    found_conversation = await session.get(Conversation, conversation_uuid)
+    # Scoped by owner, not session.get (which can't filter) -- a wrong-owner conversation_id
+    # raises ConversationNotFound identically to a nonexistent one, so callers can't probe for
+    # another user's conversation ids (see Phase 2 of the GA-readiness roadmap).
+    found_conversation = (
+        (
+            await session.execute(
+                select(Conversation).where(
+                    Conversation.id == conversation_uuid, Conversation.user_id == user_id
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
     if found_conversation is None:
         raise ConversationNotFound(f"conversation {conversation_id} not found")
     conversation = found_conversation
@@ -60,11 +73,12 @@ async def _load_conversation(
 async def handle_query_turn(
     session: AsyncSession,
     question: str,
+    user_id: uuid.UUID,
     conversation_id: str | None = None,
     top_k: int = 8,
     doc_type: str | None = None,
 ) -> QueryResponse:
-    conversation, history = await _load_conversation(session, conversation_id)
+    conversation, history = await _load_conversation(session, conversation_id, user_id)
 
     standalone_question = await reformulate_query(history, question)
     passages: list[SearchResult] = await hybrid_search(
