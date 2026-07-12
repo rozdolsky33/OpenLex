@@ -4,7 +4,7 @@ Flat tracking sheet — check items off as PRs merge. Full reasoning, acceptance
 file-level detail for each item live in
 `docs/superpowers/plans/2026-07-12-ga-readiness-roadmap.md`; this file is just the scoreboard.
 
-**Progress: 9 / 32 items complete (28%)** — update this line by hand as boxes get checked.
+**Progress: 13 / 32 items complete (41%)** — update this line by hand as boxes get checked.
 
 ## Phase 0 — Prep
 - [ ] 0.1 Fix `pipelines.yml` to actually run `apps/worker/tests`
@@ -20,11 +20,11 @@ file-level detail for each item live in
 - [x] 1.7 `TierBadge` in web UI shows live tier + usage + reset time
 - [ ] 1.8 Follow-up (not done in this pass): `/auth/login` brute-force rate limiting (`slowapi`, 5/min/IP)
 
-## Phase 2 — Conversation authorization 🔴 blocker
-- [ ] 2.1 Migration: `conversations.user_id` added (renumbered `0005_...` — `0004` is now tiers)
-- [ ] 2.2 `Conversation` ORM model updated
-- [ ] 2.3 `handle_query_turn` scopes loads by `user_id`; cross-user access returns 404
-- [ ] 2.4 Integration test (`tests/integration/test_conversations.py`) covers cross-user denial
+## Phase 2 — Conversation authorization 🔴 blocker — ✅ done 2026-07-12
+- [x] 2.1 Migration: `conversations.user_id` added (renumbered `0005_...` — `0004` is now tiers)
+- [x] 2.2 `Conversation` ORM model updated
+- [x] 2.3 `handle_query_turn` scopes loads by `user_id`; cross-user access returns 404
+- [x] 2.4 Integration test (`tests/integration/test_conversations.py`) covers cross-user denial
 
 ## Phase 3 — Production observability 🔴 blocker (partially done via Phase 1)
 - [ ] 3.1 Structured JSON logging in `apps/api` + `apps/worker`, repo-wide (Phase 1 only covers quota events)

@@ -3,10 +3,20 @@ src/legal_models/orm.py) added by ADR-0003 -- hits a real Postgres, see
 tests/integration/README.md for how to run these."""
 
 import uuid
+from datetime import UTC, datetime
 
-from legal_models.orm import Conversation, Message
+from legal_models.orm import Conversation, Message, User
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+
+
+def _make_user() -> User:
+    return User(
+        id=uuid.uuid4(),
+        email=f"{uuid.uuid4()}@example.com",
+        password_hash="unused",
+        created_at=datetime.now(UTC),
+    )
 
 
 async def test_creating_a_conversation_assigns_a_uuid(db_session) -> None:
@@ -137,3 +147,40 @@ async def test_deleting_a_conversation_cascades_to_its_messages(db_session) -> N
         .all()
     )
     assert remaining == []
+
+
+async def test_a_conversation_is_not_loadable_by_a_different_users_id(db_session) -> None:
+    owner = _make_user()
+    other_user = _make_user()
+    db_session.add_all([owner, other_user])
+    await db_session.flush()
+
+    conversation = Conversation(user_id=owner.id)
+    db_session.add(conversation)
+    await db_session.flush()
+
+    found_for_owner = (
+        (
+            await db_session.execute(
+                select(Conversation).where(
+                    Conversation.id == conversation.id, Conversation.user_id == owner.id
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+    found_for_other_user = (
+        (
+            await db_session.execute(
+                select(Conversation).where(
+                    Conversation.id == conversation.id, Conversation.user_id == other_user.id
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+    assert found_for_owner is not None
+    assert found_for_other_user is None

@@ -73,6 +73,12 @@ class Conversation(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    # Nullable at the DB level -- legacy/pre-Phase-2 rows have no owner and are treated as
+    # orphaned/inaccessible, not backfilled. The application layer always sets this on create
+    # and always filters loads by it -- see legal_generation.conversation._load_conversation.
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
+    )
 
 
 class Message(Base):

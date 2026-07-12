@@ -15,9 +15,6 @@ router = APIRouter()
 async def query(
     req: QueryRequest,
     session: AsyncSession = Depends(get_session),
-    # Gates the endpoint on a valid bearer token; not otherwise used by handle_query_turn yet --
-    # conversations aren't scoped per-user (any authenticated caller holding a conversation_id
-    # can continue it, same accepted limitation ADR-0003 documents for the no-auth case).
     user: User = Depends(get_current_user),
 ) -> QueryResponse:
     try:
@@ -40,6 +37,7 @@ async def query(
             conversation_id=req.conversation_id,
             top_k=req.top_k,
             doc_type=req.doc_type,
+            user_id=user.id,
         )
     except ConversationNotFound as exc:
         # Covers both "conversation_id doesn't exist" and "conversation_id isn't a valid UUID"
