@@ -19,6 +19,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from legal_models.schemas import IngestResponse  # noqa: E402
 from openlex_shared.db import SessionLocal  # noqa: E402
+from pipelines.indexing.cases import upsert_all_seed_cases  # noqa: E402
 from pipelines.indexing.statutes import upsert_all_seed_statutes  # noqa: E402
 
 logger = logging.getLogger("openlex_worker")
@@ -47,18 +48,13 @@ async def run_ingest(
         results.append(statute_result)
 
     if source in ("cases", "all"):
-        # No seed_cases.json yet (pipelines/ingestion/ny_case_law/ -- hand-curated, separate
-        # later work). A clean no-op, not an error.
-        logger.info("no seed_cases.json yet -- skipping case-law ingestion")
-        results.append(
-            IngestResponse(status="skipped", documents_ingested=0, chunks_created=0, errors=[])
-        )
+        async with SessionLocal() as session:
+            case_result = await upsert_all_seed_cases(session, force=force)
+            await session.commit()
+        results.append(case_result)
 
     all_errors = [e for r in results for e in r.errors]
-    if source == "cases":
-        overall_status = "skipped"
-    else:
-        overall_status = "partial_failure" if all_errors else "ok"
+    overall_status = "partial_failure" if all_errors else "ok"
 
     return IngestResponse(
         status=overall_status,

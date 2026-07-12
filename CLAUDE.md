@@ -40,29 +40,33 @@ generation design). What's built:
   `BAAI/bge-small-en-v1.5`) and `search.py` (the hybrid RRF search implementation).
 - `packages/legal_generation/` has `generator.py` (grounded answer generation; see
   `ml/prompts/statute_qa_system.txt` for the system prompt).
-- `packages/legal_parsing/` has `chunker.py` — v1 chunks one statute section into exactly one
-  chunk (no subsection splitting yet; see ADR-0002 for why and its known truncation
-  limitation on long sections).
+- `packages/legal_parsing/` has `chunker.py` — `chunk_statute_text` chunks one statute
+  section into exactly one chunk (no subsection splitting yet; see ADR-0002 for why and its
+  known truncation limitation on long sections); `chunk_case_text` splits case-law opinions
+  into multiple paragraph-packed chunks instead, since opinions run far longer than statute
+  sections (see ADR-0006).
 - `apps/worker/src/openlex_worker/__main__.py` + `cli.py` implement
   `python -m openlex_worker ingest --source {statutes|cases|all}`, so `scripts/ingest.sh` now
-  runs for real. `pipelines/normalization/statutes.py` and `pipelines/indexing/statutes.py`
-  do the normalize→chunk→embed→upsert work, respecting immutable `(source, source_id,
-  version)` rows (no in-place updates — a changed document gets a new version).
-- `tests/integration/` now has real tests (`test_indexing.py`, `test_normalization.py`,
-  `test_search.py`) against a real Postgres+pgvector — see `scripts/test-db.sh` and
-  `tests/integration/README.md` for how to run them.
+  runs for real for both sources. `pipelines/normalization/{statutes,cases}.py` and
+  `pipelines/indexing/{statutes,cases}.py` (sharing a common write path in
+  `pipelines/indexing/_shared.py`) do the normalize→chunk→embed→upsert work, respecting
+  immutable `(source, source_id, version)` rows (no in-place updates — a changed document
+  gets a new version).
+- `pipelines/ingestion/ny_case_law/seed_cases.json` has real full-text opinions for 3 NY
+  Court of Appeals landlord-tenant cases (Park West Management v. Mitchell, Regina
+  Metropolitan v. NYS DHCR, Mallory Associates v. Barving Realty) — hand-curated, no live
+  fetch (see ADR-0006 for why every free automated case-law text source is either auth-gated
+  or bot-blocked).
+- `apps/web/` is a working Vite + React + TypeScript + Tailwind chat UI (auth-gated,
+  single-conversation, citations + disclaimer displayed per answer) — see ADR-0003.
+- `tests/integration/` now has real tests (`test_indexing.py`, `test_indexing_cases.py`,
+  `test_normalization.py`, `test_normalization_cases.py`, `test_search.py`) against a real
+  Postgres+pgvector — see `scripts/test-db.sh` and `tests/integration/README.md` for how to
+  run them.
 - `tests/evaluation/golden_questions.yaml` + `test_golden_questions.py` now exist: a
   parametrized, real-API golden-question suite marked `evaluation` and excluded from the
   default `uv run pytest` run (real Anthropic calls, needs a running server — see
   `tests/evaluation/README.md`). `scripts/evaluate.sh` runs it for real now.
-
-Still not built:
-
-- No case-law ingestion code or `pipelines/ingestion/ny_case_law/seed_cases.json` — that
-  directory is still just a README. Case law isn't retrievable yet; `hybrid_search`/
-  `/query` only ever return statute passages.
-- `apps/web/` has only empty `src/api/` and `src/components/` directories — no
-  `package.json`, no Vite/React setup, no actual UI code yet.
 
 Before assuming a module/endpoint/script exists, check for it — don't rely on the README's or
 this file's description of the target architecture as current fact.
@@ -125,9 +129,12 @@ to fetch as `{lawId, locationId, citationAbbrev}`; `citationAbbrev` is threaded 
 explicitly so the citation shown to users doesn't depend on the API's internal id. Fetches are
 throttled sequentially (`_REQUEST_DELAY_SECONDS`) to be polite to the free public API.
 
-Case law has no public API (NY Official Reports blocks automated fetches), so case-law data is
-meant to come from a hand-curated seed file (`pipelines/ingestion/ny_case_law/seed_cases.json`,
-not yet created) rather than being scraped live.
+Case law has no viable automated full-text source — CourtListener's detail API needs a token,
+and its public opinion pages, linked court PDFs, and Justia are all bot-blocked (verified
+empirically, see ADR-0006) — so case-law data comes from a hand-curated seed file
+(`pipelines/ingestion/ny_case_law/seed_cases.json`) with the full opinion text baked in,
+obtained once out-of-band via an authenticated CourtListener API token, not fetched live at
+ingestion time.
 
 `pipelines/` modules aren't an installed package — they're plain directories (Python implicit
 namespace packages) imported by `apps/worker` at runtime relative to the repo root. Run them

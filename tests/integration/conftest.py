@@ -11,11 +11,13 @@ import os
 from pathlib import Path
 
 import pytest_asyncio
+from pipelines.indexing.cases import upsert_case_document
 from pipelines.indexing.statutes import upsert_statute_document
+from pipelines.normalization.cases import normalize_case
 from pipelines.normalization.statutes import normalize_statute
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from legal_parsing import chunk_statute_text
+from legal_parsing import chunk_case_text, chunk_statute_text
 
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
@@ -44,5 +46,18 @@ async def seeded_statutes(db_session):
     normalized = normalize_statute(raw)
     chunks = chunk_statute_text(normalized["text"], citation=normalized["citation"])
     await upsert_statute_document(db_session, normalized, chunks)
+    await db_session.flush()
+    return db_session
+
+
+@pytest_asyncio.fixture
+async def seeded_cases(db_session):
+    """Ingests the synthetic Park West fixture via the actual normalize/chunk/index
+    pipeline, mirroring seeded_statutes -- see tests/fixtures/park_west_raw.json's own
+    docstring-equivalent comment for why it's synthetic, not the real opinion."""
+    raw = json.loads((FIXTURES_DIR / "park_west_raw.json").read_text())
+    normalized = normalize_case(raw)
+    chunks = chunk_case_text(normalized["text"], citation=normalized["citation"])
+    await upsert_case_document(db_session, normalized, chunks)
     await db_session.flush()
     return db_session
