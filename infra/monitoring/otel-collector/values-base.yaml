@@ -1,0 +1,56 @@
+# infra/monitoring/otel-collector/values-base.yaml
+#
+# Shared base values for the OTel Collector, consumed by both kind and any future eks-demo
+# Application. The exporters here are intentionally `debug`-only in this phase — Tempo,
+# Jaeger, and Loki don't exist yet (later phases add real exporters to these same
+# pipelines). This proves the receive-and-process path works before wiring real backends.
+
+mode: deployment
+
+# The chart no longer defaults image.repository (breaking change vs. the version this task
+# was drafted against) — it now errors at render time unless set explicitly. This config only
+# uses core components (otlp receiver, batch processor, debug exporter), all of which ship in
+# the core `otel/opentelemetry-collector` image, so we pin that (with the matching
+# `otelcol` command name) rather than pulling the larger `-contrib` image we don't need.
+image:
+  repository: otel/opentelemetry-collector
+
+command:
+  name: otelcol
+
+config:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+  processors:
+    batch: {}
+  exporters:
+    debug:
+      verbosity: detailed
+  service:
+    pipelines:
+      traces:
+        receivers: [otlp]
+        processors: [batch]
+        exporters: [debug]
+      metrics:
+        receivers: [otlp]
+        processors: [batch]
+        exporters: [debug]
+      logs:
+        receivers: [otlp]
+        processors: [batch]
+        exporters: [debug]
+
+ports:
+  otlp:
+    enabled: true
+  otlp-http:
+    enabled: true
+
+serviceMonitor:
+  enabled: true
