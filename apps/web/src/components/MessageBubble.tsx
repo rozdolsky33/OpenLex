@@ -1,5 +1,6 @@
 import type { DisplayMessage } from "./ChatPage";
 import { AbstainedNotice } from "./AbstainedNotice";
+import { AnswerText } from "./AnswerText";
 import { CitationList } from "./CitationList";
 import { Disclaimer } from "./Disclaimer";
 
@@ -25,7 +26,7 @@ export function MessageBubble({ message }: { message: DisplayMessage }) {
       {message.abstained ? (
         <AbstainedNotice>{message.content}</AbstainedNotice>
       ) : (
-        <p>{message.content}</p>
+        <AnswerText text={message.content} />
       )}
       {message.citations && message.citations.length > 0 && (
         <CitationList citations={message.citations} />
