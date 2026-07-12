@@ -8,6 +8,23 @@ import { ChatInput } from "./ChatInput";
 import { ConnectionStatus } from "./ConnectionStatus";
 import { ErrorBanner } from "./ErrorBanner";
 import { MessageList } from "./MessageList";
+import { TierBadge } from "./TierBadge";
+
+interface QuotaExceededDetail {
+  error: "quota_exceeded";
+  tier: string;
+  limit: number;
+  reset_at: string;
+}
+
+function formatQuotaExceededMessage(detail: QuotaExceededDetail): string {
+  const resetTime = new Date(detail.reset_at).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const tierLabel = detail.tier.charAt(0).toUpperCase() + detail.tier.slice(1);
+  return `You've reached your ${tierLabel} tier limit (${detail.limit}/${detail.limit} requests). Resets at ${resetTime}.`;
+}
 
 export interface DisplayMessage {
   id: string;
@@ -53,8 +70,14 @@ const RESUMED_CONVERSATION_NOTICE =
   "Continuing a previous conversation — earlier messages aren't available to display, " +
   "but the model still has that history server-side.";
 
+const EXAMPLE_QUESTIONS = [
+  "How much notice before a landlord can start eviction?",
+  "What is the warranty of habitability?",
+  "Can my landlord withhold my security deposit?",
+];
+
 export function ChatPage() {
-  const { logout } = useAuth();
+  const { logout, user, refreshUsage } = useAuth();
   const [state, dispatch] = useReducer(reducer, { messages: [], pending: false });
   const [error, setError] = useState<string | null>(null);
   const [question, setQuestion] = useState("");
@@ -81,6 +104,9 @@ export function ChatPage() {
 
     try {
       const response = await postQuery(trimmed, { docType: docType || undefined });
+      if (response.usage) {
+        refreshUsage(response.usage);
+      }
       dispatch({
         type: "add",
         message: {
@@ -101,6 +127,22 @@ export function ChatPage() {
       } else if (err instanceof ApiError && err.status === 401) {
         // AuthContext's global unauthorized handler already logs the user out and shows the
         // session-expired banner -- nothing app-specific to add here.
+      } else if (err instanceof ApiError && err.status === 429) {
+        const detail = err.body as { detail?: QuotaExceededDetail } | undefined;
+        if (detail?.detail) {
+          setError(formatQuotaExceededMessage(detail.detail));
+          if (user) {
+            refreshUsage({
+              ...user,
+              tier: detail.detail.tier as typeof user.tier,
+              request_count: detail.detail.limit,
+              request_limit: detail.detail.limit,
+              period_reset_at: detail.detail.reset_at,
+            });
+          }
+        } else {
+          setError("You've reached your request limit. Please try again later.");
+        }
       } else {
         setError("Something went wrong. Please try again.");
       }
@@ -111,27 +153,78 @@ export function ChatPage() {
     }
   }
 
+  const hasMessages = state.messages.length > 0;
+
   return (
-    <div className="flex h-screen flex-col bg-slate-50">
-      <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3">
+    <div className="flex h-screen flex-col bg-gradient-to-b from-white to-slate-50">
+      <header className="flex items-center justify-between border-b border-slate-200/80 bg-white/80 px-4 py-3 backdrop-blur-sm">
         <h1 className="text-sm font-semibold text-slate-900">OpenLex</h1>
         <div className="flex items-center gap-3">
           <ConnectionStatus />
+          {user && <TierBadge user={user} />}
           <button type="button" onClick={logout} className="text-xs text-slate-500 underline">
             Log out
           </button>
         </div>
       </header>
-      <MessageList messages={state.messages} pending={state.pending} />
-      {error && <ErrorBanner message={error} />}
-      <ChatInput
-        question={question}
-        onQuestionChange={setQuestion}
-        docType={docType}
-        onDocTypeChange={setDocType}
-        onSubmit={handleSubmit}
-        disabled={state.pending}
-      />
+
+      {hasMessages ? (
+        <>
+          <MessageList messages={state.messages} pending={state.pending} />
+          {error && <ErrorBanner message={error} />}
+          <div className="border-t border-slate-200 bg-white px-4 py-3">
+            <div className="mx-auto w-full max-w-3xl">
+              <ChatInput
+                question={question}
+                onQuestionChange={setQuestion}
+                docType={docType}
+                onDocTypeChange={setDocType}
+                onSubmit={handleSubmit}
+                disabled={state.pending}
+              />
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="flex flex-1 flex-col items-center justify-center px-4 pb-24">
+          <div className="w-full max-w-2xl text-center">
+            <h2 className="text-2xl font-semibold text-balance text-slate-900">
+              What do you need to know about NY landlord-tenant law?
+            </h2>
+            <p className="mt-2 text-sm text-slate-500">
+              Answers are grounded in retrieved statutes and case law, with citations — this is
+              legal information, not legal advice.
+            </p>
+            <div className="mt-6">
+              <ChatInput
+                question={question}
+                onQuestionChange={setQuestion}
+                docType={docType}
+                onDocTypeChange={setDocType}
+                onSubmit={handleSubmit}
+                disabled={state.pending}
+              />
+            </div>
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
+              {EXAMPLE_QUESTIONS.map((example) => (
+                <button
+                  key={example}
+                  type="button"
+                  onClick={() => setQuestion(example)}
+                  className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+                >
+                  {example}
+                </button>
+              ))}
+            </div>
+            {error && (
+              <div className="mt-4 overflow-hidden rounded-lg">
+                <ErrorBanner message={error} />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

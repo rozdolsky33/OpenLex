@@ -59,6 +59,13 @@ class User(Base):
     email: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    # SaaS tier gating -- see apps/api/src/openlex_api/quota.py for the tier->limit mapping and
+    # the rolling-window reset logic that reads/writes request_count/period_started_at.
+    tier: Mapped[str] = mapped_column(String, nullable=False, default="silver")
+    request_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    period_started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow
+    )
 
 
 class Conversation(Base):
