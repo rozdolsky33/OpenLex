@@ -4,7 +4,7 @@ Flat tracking sheet — check items off as PRs merge. Full reasoning, acceptance
 file-level detail for each item live in
 `docs/superpowers/plans/2026-07-12-ga-readiness-roadmap.md`; this file is just the scoreboard.
 
-**Progress: 17 / 36 items complete (47%)** — update this line by hand as boxes get checked.
+**Progress: 19 / 36 items complete (53%)** — update this line by hand as boxes get checked.
 
 ## Phase 0 — Prep
 - [ ] 0.1 Fix `pipelines.yml` to actually run `apps/worker/tests`
@@ -49,11 +49,22 @@ and `docs/superpowers/plans/2026-07-13-observability-phase2-tracing-and-ha.md`.
 - [x] 3.7d Two initial Grafana dashboards (Golden Signals — API saturation panels + explicit
       placeholders for the still-missing latency/traffic/error panels; Tier & Quota) —
       verified against real traffic, not synthetic data
-- [ ] 3.8 Observability Phase 2 (app-level): `apps/api` emitting its own traces/spans via OTel
-      SDK, and the request-duration histogram the Golden Signals dashboard is still waiting on
-      — the infra-level Tempo/Jaeger backends exist (3.7b) but no application code sends
-      traces to them yet
-- [ ] 3.9 Observability Phase 3: `apps/worker` OTel instrumentation + `postgres_exporter`
+- [x] 3.8 Observability Phase 2 (app-level): `apps/api` emits real traces via OTel SDK
+      (FastAPI/SQLAlchemy/httpx auto-instrumentation), manual `user.tier`/`user.id`/
+      `conversation.id` span attributes on `/query`, and quota-event logs correlated with
+      `trace_id` — all live-verified end-to-end (a real `/query` call's trace in Jaeger carries
+      the right attributes with zero PII; the matching Loki log line carries the same
+      `trace_id`). The Golden Signals dashboard's traffic/error/latency panels are still
+      explicitly placeholders — no OTel *metrics* pipeline exists yet, only tracing (see 3.9's
+      note); this is the one remaining Golden Signals gap, tracked separately, not silently
+      dropped.
+- [x] 3.9 Observability Phase 3: `apps/worker` OTel instrumentation (with explicit
+      `force_flush()` before exit, verified live — a 16ms-lifetime ingest process still
+      produced a complete trace) + `postgres_exporter`/`pg_stat_statements` deployed and
+      live-verified post-merge end-to-end (Postgres → exporter → Prometheus → Grafana all
+      show real non-zero data, not just that the exporter process runs). One real secret leak
+      was caught and fixed during this work: the NY Open Legislation API key was appearing in
+      cleartext in httpx span attributes; now redacted.
 - [ ] 3.10 Observability Phase 4: `apps/web` browser tracing
 - [ ] 3.11 Alertmanager symptom-based alert rules (error rate, p99 latency, quota burn) — Loki
       itself is done (3.7c), this item is specifically the alerting rules, still open
