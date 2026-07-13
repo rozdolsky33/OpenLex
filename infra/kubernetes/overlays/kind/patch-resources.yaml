@@ -6,8 +6,9 @@ spec:
   # 2 replicas spread across the two `openlex.dev/workload=apps` nodes (see
   # infra/kubernetes/kind/kind-config.yaml) via the preferred podAntiAffinity below — real
   # separation from the dedicated observability node, and real (if kind-scale) HA instead of
-  # both replicas landing on whatever node is free. See patch_resources.yaml Task 4's
-  # PodDisruptionBudget for what backs this during voluntary disruptions.
+  # both replicas landing on whatever node is free. See
+  # infra/kubernetes/overlays/kind/pdb-openlex-api.yaml for what backs this during voluntary
+  # disruptions.
   replicas: 2
   template:
     spec:
