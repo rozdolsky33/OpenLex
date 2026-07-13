@@ -30,6 +30,13 @@ redis:
     limits: { cpu: 100m, memory: 64Mi }
 
 controller:
+  # The application-controller caches the full live resource tree of every Application it
+  # manages. 256Mi was fine when this only watched the small `openlex` app; adding
+  # kube-prometheus-stack (hundreds of CRDs/resources: ServiceMonitors, PrometheusRules,
+  # Prometheus/Alertmanager operator-managed objects, etc.) pushed it into a sustained
+  # OOMKilled/CrashLoopBackOff (confirmed live: exitCode 137, reason OOMKilled, 13+ restarts).
+  # Bumped for the current 3-Application footprint (openlex, kube-prometheus-stack,
+  # otel-collector); revisit again if more Applications with large resource trees are added.
   resources:
-    requests: { cpu: 25m, memory: 128Mi }
-    limits: { cpu: 200m, memory: 256Mi }
+    requests: { cpu: 50m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 768Mi }
