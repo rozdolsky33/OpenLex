@@ -1,0 +1,64 @@
+# infra/monitoring/postgres-exporter/values-base.yaml
+#
+# Shared base values for prometheus-postgres-exporter, consumed by both the kind Application
+# and any future eks-demo Application. Deployed into the `openlex` namespace (not
+# `observability`, unlike every other observability component) specifically so it can
+# reference the existing `openlex-secrets` Secret directly — see
+# docs/superpowers/specs/2026-07-12-production-observability-design.md's "Kubernetes / GitOps
+# layout" section for the full rationale (Prometheus already watches ServiceMonitors across
+# all namespaces, so the exporter doesn't need to live in `observability` to be scraped).
+#
+# Verified against `helm show values prometheus-community/prometheus-postgres-exporter
+# --version 8.1.1` (resolved via `helm search repo ... --versions`; appVersion v0.20.1). The
+# real schema differs from the task brief's guess (`extraEnvSecrets`/`envFromSecret` don't
+# exist in this chart) in a few load-bearing ways:
+#
+#   - The real field is `config.datasourceSecret: {name, key}` (confirmed in
+#     templates/deployment.yaml: when set, it renders a single `DATA_SOURCE_NAME` env var
+#     sourced via `secretKeyRef` straight from that Secret key -- no `extraEnvSecrets` key
+#     exists in this chart at all). This is exactly the "one Secret key, no duplicated
+#     credentials" mechanism the design doc calls for.
+#   - BUT the chart's own values.yaml comment is explicit that the secret value must already be
+#     in the plain libpq DSN format the `postgres_exporter` binary's Go driver understands:
+#     `postgresql://login:password@hostname:port/dbname?sslmode=disable`. `openlex-secrets`'s
+#     existing `DATABASE_URL` key is `postgresql+asyncpg://...` (SQLAlchemy's async driver
+#     scheme, consumed by `apps/api`/`apps/worker` via `openlex_shared.config.Settings`) --
+#     the `+asyncpg` suffix is not a scheme libpq recognizes, so pointing
+#     `config.datasourceSecret` straight at `DATABASE_URL` would fail to connect.
+#     Resolution: `scripts/kind-secrets-bootstrap.sh` now also derives a second key,
+#     `POSTGRES_EXPORTER_DSN` (same host/user/password/db, `+asyncpg` stripped,
+#     `sslmode=disable` appended to match Postgres's own no-TLS setup), into the same
+#     `openlex-secrets` Secret -- one extra derived value, not a duplicated credential or a
+#     second Secret object. This is the same idiom that script already uses to rewrite
+#     `DATABASE_URL`'s host from docker-compose's `db` to kind's `postgres` Service name.
+#   - `serviceMonitor.enabled: true` is a real, built-in values key on this chart (common for
+#     prometheus-community charts) -- no hand-written ServiceMonitor manifest needed, unlike
+#     components without their own chart-native one.
+#   - `--collector.stat_statements` is NOT on by default (confirmed via `postgres_exporter
+#     --help` on the resolved image, `quay.io/prometheuscommunity/postgres-exporter:v0.20.1`:
+#     "Enable the stat_statements collector (default: disabled)") -- without
+#     `config.extraArgs: ["--collector.stat_statements"]` the exporter would run and expose
+#     generic `pg_up`/connection-count metrics while silently never emitting any
+#     `pg_stat_statements_*` metric at all, which is exactly the failure mode the task's
+#     verification step warns about.
+#   - `resources`/`nodeSelector`/`tolerations`/`affinity` are all real top-level keys on this
+#     chart (unlike loki/tempo/jaeger, which nest them under a component key) -- set directly
+#     here and in the Application's valuesObject.
+
+config:
+  datasourceSecret:
+    name: openlex-secrets
+    key: POSTGRES_EXPORTER_DSN
+  extraArgs:
+    - "--collector.stat_statements"
+
+serviceMonitor:
+  enabled: true
+  interval: 30s
+
+resources:
+  requests: { cpu: 10m, memory: 32Mi }
+  limits: { cpu: 100m, memory: 64Mi }
+
+podDisruptionBudget:
+  enabled: false

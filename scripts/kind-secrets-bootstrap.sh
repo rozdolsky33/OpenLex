@@ -22,9 +22,31 @@ kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply
 # just the host on the way into the Secret so the same .env works for both without editing it
 # by hand; discovered while bootstrapping observability Phase 1 (api's /healthz reported
 # `db: false` until this was fixed).
+#
+# Also derive POSTGRES_EXPORTER_DSN: prometheus-postgres-exporter's `config.datasourceSecret`
+# (infra/monitoring/postgres-exporter/values-base.yaml) expects a plain libpq DSN
+# (`postgresql://...`), but DATABASE_URL is `postgresql+asyncpg://...` (SQLAlchemy's async
+# driver scheme, needed by apps/api and apps/worker) — the `+asyncpg` suffix isn't a scheme
+# libpq/the exporter's Go driver understands. Rather than duplicating credentials into a
+# second Secret, derive one extra key here from the same host-rewritten DATABASE_URL, with
+# `+asyncpg` stripped and `sslmode=disable` appended (Postgres itself has no TLS configured on
+# kind) — same Secret, same source of truth, one additional key.
+# `kubectl create secret --from-env-file` refuses to be combined with `--from-literal` (kubectl
+# itself: "from-env-file cannot be combined with from-file or from-literal"), so the derived
+# key is appended as one more line to the same host-rewritten env stream instead of passed
+# separately.
+POSTGRES_EXPORTER_DSN="$(
+  sed -E 's#(DATABASE_URL=.*@)db(:[0-9]+/)#\1postgres\2#' .env \
+    | grep '^DATABASE_URL=' \
+    | sed -E 's/^DATABASE_URL=//; s#\+asyncpg##'
+)?sslmode=disable"
+
 kubectl create secret generic openlex-secrets \
   --namespace "${NAMESPACE}" \
-  --from-env-file=<(sed -E 's#(DATABASE_URL=.*@)db(:[0-9]+/)#\1postgres\2#' .env) \
+  --from-env-file=<(
+    sed -E 's#(DATABASE_URL=.*@)db(:[0-9]+/)#\1postgres\2#' .env
+    echo "POSTGRES_EXPORTER_DSN=${POSTGRES_EXPORTER_DSN}"
+  ) \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "openlex-secrets created/updated in namespace '${NAMESPACE}' from .env."
