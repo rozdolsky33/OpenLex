@@ -6,12 +6,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from legal_models.schemas import HealthResponse
 from legal_retrieval.embeddings import _get_model
 from openlex_shared.config import settings
-from openlex_shared.db import get_session
+from openlex_shared.db import engine, get_session
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlex_api.routers import auth, ingest, query
+from openlex_api.telemetry import setup_telemetry
 
 
 @asynccontextmanager
@@ -23,6 +24,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="OpenLex API", lifespan=lifespan)
+# Instrument before any middleware/routes run, so tracing is active for the very first
+# request. `engine` is passed explicitly -- see telemetry.py's module docstring for why
+# SQLAlchemyInstrumentor can't retroactively instrument an already-created AsyncEngine
+# without it.
+setup_telemetry(app, engine=engine)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_allow_origins,
