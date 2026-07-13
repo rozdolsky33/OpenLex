@@ -5,7 +5,7 @@ resources:
   - statefulset.yaml
   - service.yaml
 
-# Reuses the same schema file docker-compose.yml already mounts at
+# Reuses the same schema files docker-compose.yml already mounts at
 # /docker-entrypoint-initdb.d — no duplicated SQL. Kustomize's default load restrictor refuses
 # to read generator files from outside the kustomization directory tree, so building this
 # (directly, or transitively via an overlay) requires `--load-restrictor LoadRestrictionsNone`
@@ -13,10 +13,16 @@ resources:
 # `kustomize build --load-restrictor LoadRestrictionsNone ...`). ArgoCD is configured for this
 # repo-wide via `kustomize.buildOptions` in infra/argocd/install/argocd-values-*.yaml, so this
 # only matters for manual/local `kustomize build` validation. Hash-suffixed by default, so
-# editing the real file produces a new ConfigMap name and rolls the StatefulSet. Note: this
-# only re-runs against an *empty* PGDATA (Postgres image behavior) — it does not re-seed an
-# already-initialized volume.
+# editing any of these files produces a new ConfigMap name and rolls the StatefulSet. Note:
+# this only re-runs against an *empty* PGDATA (Postgres image behavior) — it does not re-seed
+# an already-initialized volume. List every migration file, not just the first — a prior
+# version of this list only had 0001_init.sql, silently skipping every later migration
+# (users/conversations/tiers/conversation-ownership) on kind specifically.
 configMapGenerator:
   - name: postgres-init-sql
     files:
       - 0001_init.sql=../../../../migrations/postgres/0001_init.sql
+      - 0002_users.sql=../../../../migrations/postgres/0002_users.sql
+      - 0003_conversations.sql=../../../../migrations/postgres/0003_conversations.sql
+      - 0004_user_tiers.sql=../../../../migrations/postgres/0004_user_tiers.sql
+      - 0005_conversation_ownership.sql=../../../../migrations/postgres/0005_conversation_ownership.sql

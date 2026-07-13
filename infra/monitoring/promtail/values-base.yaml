@@ -1,0 +1,44 @@
+# infra/monitoring/promtail/values-base.yaml
+#
+# Shared base values for Promtail — ships every pod's stdout/stderr to Loki. DaemonSet by
+# chart default; must run on every node including the tainted observability node (see the
+# Application's tolerations, not a nodeSelector, since this needs to run everywhere).
+# Environment-specific overrides (resources, the Loki endpoint it points at) live in the
+# Application's own valuesObject, not here.
+#
+# Verified against `helm show values grafana/promtail --version 6.17.*` (resolved to chart
+# 6.17.1, appVersion 3.5.1):
+#   - `daemonset.enabled: true` is the chart default (DaemonSet, not Deployment) — no change
+#     needed, confirmed by reading the values.yaml `daemonset:` block.
+#   - `config.clients[0].url` (chart default:
+#     `http://loki-gateway/loki/api/v1/push`) must point at Loki's real Service instead —
+#     this project's Loki (Task 8) runs with `gateway.enabled: false`, so there is no
+#     `loki-gateway` Service; the chart's own `loki.host` helper in that case points straight
+#     at the `loki` singleBinary Service on port 3100, which serves the push API
+#     (`/loki/api/v1/push`) alongside the query API on that same port. Set here to
+#     `http://loki.observability.svc.cluster.local:3100/loki/api/v1/push`.
+#   - IMPORTANT — `tolerations` gotcha: the chart's *default* `tolerations` (values.yaml)
+#     already contains two entries so the DaemonSet schedules onto master/control-plane nodes
+#     out of the box:
+#       - key: node-role.kubernetes.io/master, operator: Exists, effect: NoSchedule
+#       - key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule
+#     Helm values arrays REPLACE, they don't merge. This kind cluster's control-plane node
+#     carries the built-in `node-role.kubernetes.io/control-plane:NoSchedule` taint
+#     (confirmed via `kubectl get nodes -o json`), separate from the
+#     `openlex.dev/workload=observability:NoSchedule` taint on the observability node. If the
+#     Application's valuesObject set `tolerations` to *only* the observability-workload entry
+#     (as every other DaemonSet/Deployment in this project's kube-prometheus-stack Application
+#     does for its own single taint), it would silently drop the chart's built-in
+#     master/control-plane tolerations and Promtail would fail to schedule on the
+#     control-plane node — this task's own requirement is "every node, including the
+#     control-plane". So the Application's valuesObject `tolerations` list must include all
+#     three entries (master + control-plane + observability), not just the observability one.
+#     Left undeclared here in values-base.yaml since it's the Application's job to set the
+#     full, correct list.
+#   - No `nodeSelector` is set (chart default: `{}`) — deliberately left this way per the
+#     brief: Promtail must run on every node (apps nodes, worker nodes, and the observability
+#     node), so only tolerations gate scheduling, never a nodeSelector.
+
+config:
+  clients:
+    - url: http://loki.observability.svc.cluster.local:3100/loki/api/v1/push

@@ -3,8 +3,36 @@ kind: Deployment
 metadata:
   name: openlex-api
 spec:
+  # 2 replicas spread across the two `openlex.dev/workload=apps` nodes (see
+  # infra/kubernetes/kind/kind-config.yaml) via the preferred podAntiAffinity below — real
+  # separation from the dedicated observability node, and real (if kind-scale) HA instead of
+  # both replicas landing on whatever node is free. See
+  # infra/kubernetes/overlays/kind/pdb-openlex-api.yaml for what backs this during voluntary
+  # disruptions.
+  #
+  # CAVEAT (confirmed via a live kubectl drain test): this is `preferred`
+  # (soft) anti-affinity, not `required` — required would leave the evicted replica stuck
+  # Pending during a drain on a 2-apps-node cluster (no third node to land on), which defeats
+  # the point of draining at all. The tradeoff: after a drain-and-reschedule, both replicas can
+  # end up co-located on the same apps node (confirmed live — this actually happened), and
+  # nothing re-spreads them automatically afterward. The PDB-backed *disruption survivability*
+  # is real and proven; the *steady-state spread* is best-effort only, not self-healing. A
+  # Kubernetes descheduler (or a 3rd apps node) would be needed to restore the spread
+  # automatically — out of scope for this kind-scale setup.
+  replicas: 2
   template:
     spec:
+      nodeSelector:
+        openlex.dev/workload: apps
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: openlex-api
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: api
           imagePullPolicy: IfNotPresent
@@ -48,22 +76,36 @@ metadata:
 spec:
   template:
     spec:
+      nodeSelector:
+        openlex.dev/workload: apps
       containers:
         - name: worker
           imagePullPolicy: IfNotPresent
           resources:
             requests:
-              cpu: 25m
-              memory: 96Mi
+              cpu: 250m
+              memory: 512Mi
             limits:
-              cpu: 100m
-              memory: 192Mi
+              cpu: 1000m
+              memory: 1Gi
+          # Same root cause as openlex-api's resource bump (see above): ingestion loads the
+          # same torch + sentence-transformers embedding model, and the original 100m/192Mi
+          # limits OOMKilled the worker the first time ingestion actually ran against kind
+          # (exitCode 137, reason OOMKilled) — this had never been exercised during Phase 1
+          # since ingestion wasn't run there. kind-only override, same as api's.
 ---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: postgres
 spec:
+  # Single instance — real Postgres HA (streaming replicas, failover) would need an operator
+  # (e.g. CloudNativePG/Patroni), out of scope here. This only keeps Postgres off the
+  # dedicated observability node, same as the other app workloads.
+  template:
+    spec:
+      nodeSelector:
+        openlex.dev/workload: apps
   volumeClaimTemplates:
     - metadata:
         name: data

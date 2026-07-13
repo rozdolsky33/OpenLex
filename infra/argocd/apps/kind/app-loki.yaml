@@ -1,0 +1,50 @@
+# infra/argocd/apps/kind/app-loki.yaml
+#
+# Single-binary Loki (see infra/monitoring/loki/values-base.yaml's header for the full
+# schema-verification notes, including the replication_factor=1 fix required for a
+# single-replica deployment). `singleBinary.resources`/`singleBinary.nodeSelector`/
+# `singleBinary.tolerations` are nested under the top-level `singleBinary:` key, not a
+# chart-wide top-level `resources`/`nodeSelector` — verified via
+# `helm show values grafana/loki --version 7.0.*` (chart 7.0.0, appVersion 3.6.7) and a live
+# `helm template` render; same "nested, not top-level" pattern as grafana/tempo
+# (`tempo.resources`) and jaegertracing/jaeger (`jaeger.resources`).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: openlex-kind
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: loki
+      targetRevision: "7.0.*"
+      helm:
+        valueFiles:
+          - $values/infra/monitoring/loki/values-base.yaml
+        valuesObject:
+          singleBinary:
+            nodeSelector:
+              openlex.dev/workload: observability
+            tolerations:
+              - key: openlex.dev/workload
+                operator: Equal
+                value: observability
+                effect: NoSchedule
+            resources:
+              requests: { cpu: 50m, memory: 128Mi }
+              limits: { cpu: 200m, memory: 384Mi }
+    - repoURL: https://github.com/rozdolsky33/OpenLex.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -1,20 +1,25 @@
-# infra/argocd/apps/kind/app-otel-collector.yaml
+# infra/argocd/apps/kind/app-tempo.yaml
+#
+# Note: `resources` for the tempo container is set at `tempo.resources`, not top-level
+# `resources` — verified via `helm show values grafana/tempo --version 1.24.*` (chart 1.24.4);
+# this chart has no top-level `resources` key (see values-base.yaml's header comment for the
+# full schema verification notes).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: otel-collector
+  name: tempo
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   project: openlex-kind
   sources:
-    - repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
-      chart: opentelemetry-collector
-      targetRevision: "0.165.*"
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: tempo
+      targetRevision: "1.24.*"
       helm:
         valueFiles:
-          - $values/infra/monitoring/otel-collector/values-base.yaml
+          - $values/infra/monitoring/tempo/values-base.yaml
         valuesObject:
           nodeSelector:
             openlex.dev/workload: observability
@@ -23,9 +28,10 @@ spec:
               operator: Equal
               value: observability
               effect: NoSchedule
-          resources:
-            requests: { cpu: 25m, memory: 64Mi }
-            limits: { cpu: 200m, memory: 256Mi }
+          tempo:
+            resources:
+              requests: { cpu: 50m, memory: 128Mi }
+              limits: { cpu: 200m, memory: 256Mi }
     - repoURL: https://github.com/rozdolsky33/OpenLex.git
       targetRevision: main
       ref: values

@@ -1,0 +1,101 @@
+{
+  "id": null,
+  "uid": "openlex-golden-signals-api",
+  "title": "Golden Signals — API",
+  "description": "Traffic/error/latency/saturation for openlex-api. Latency has no data source yet (see the panel note) — request-duration histogram instrumentation is a later phase.",
+  "tags": ["openlex", "golden-signals"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "Traffic — pending backend instrumentation",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "**Traffic, error-rate, and p50/p95/p99 latency panels are pending Phase 2 backend instrumentation.** openlex-api's `/metrics` endpoint today only exports `openlex_query_requests_total` and `openlex_query_quota_exceeded_total` (both Counters labeled `tier`, see `apps/api/src/openlex_api/quota.py`) — there is no per-route HTTP request counter, no error-status breakdown, and no request-duration histogram (`prometheus-fastapi-instrumentator` or equivalent was never added). Tier/quota traffic is visible on the separate **Tier & Quota** dashboard. Only CPU/memory saturation (below) can be shown for openlex-api today from cAdvisor data."
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "CPU usage — openlex-api pods (cores)",
+      "description": "rate() of container_cpu_usage_seconds_total for openlex-api pods, summed across containers per pod.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"openlex\", pod=~\"openlex-api-.*\"}[5m]))",
+          "legendFormat": "{{pod}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Memory working set — openlex-api pods (bytes)",
+      "description": "container_memory_working_set_bytes for openlex-api pods.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "container_memory_working_set_bytes{namespace=\"openlex\", pod=~\"openlex-api-.*\"}",
+          "legendFormat": "{{pod}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "text",
+      "title": "Error rate — not yet instrumented",
+      "gridPos": { "h": 4, "w": 12, "x": 0, "y": 12 },
+      "options": {
+        "mode": "markdown",
+        "content": "**Awaiting request-duration/status-code histogram — Phase 2 backend instrumentation.** No HTTP-level error-rate metric exists today."
+      }
+    },
+    {
+      "id": 5,
+      "type": "text",
+      "title": "p50/p95/p99 latency — not yet instrumented",
+      "gridPos": { "h": 4, "w": 12, "x": 12, "y": 12 },
+      "options": {
+        "mode": "markdown",
+        "content": "**Awaiting request-duration histogram — Phase 2 backend instrumentation.** No latency metric exists today (no `prometheus-fastapi-instrumentator` or equivalent)."
+      }
+    }
+  ]
+}

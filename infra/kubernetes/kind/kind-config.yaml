@@ -1,7 +1,53 @@
+# infra/kubernetes/kind/kind-config.yaml
 # No ingress/TLS in kind (see infra/kubernetes/README.md) — access is via
-# `kubectl port-forward`, so no extraPortMappings are needed for that. Kept as a single-node
-# cluster; bump this file if you later opt into the local-ingress path noted in the README.
+# `kubectl port-forward`, so no extraPortMappings are needed for that.
+#
+# 1 control-plane + 3 workers, to mimic real separation-of-concerns topology instead of
+# everything landing on one node: one worker is dedicated (labeled + tainted) to the
+# observability stack (kube-prometheus-stack, later Tempo/Jaeger/Loki/OTel Collector), the
+# other two are for application workloads (openlex-api/worker/postgres), which lets
+# openlex-api run 2 replicas spread across real separate nodes via podAntiAffinity instead of
+# a same-node anti-affinity that proves nothing. See infra/kubernetes/overlays/kind/
+# patch-resources.yaml for the nodeSelector/affinity wiring on the apps side, and
+# infra/argocd/apps/kind/{app-kube-prometheus-stack,app-otel-collector}.yaml's valuesObject
+# for the matching nodeSelector/tolerations on the observability side.
+#
+# IMPORTANT: kind can't add nodes to a running cluster — changing this file requires
+# `kind delete cluster --name openlex && scripts/kind-up.sh` (destructive: wipes all
+# workloads, including Postgres data). Applying this is a deliberate, separate step (Task 7),
+# not automatic on commit.
+#
+# Also worth being explicit about what this does NOT simulate: kind's "nodes" are containers
+# on one Docker daemon/laptop, not separate hosts — there's no real network partition, zone,
+# or hardware failure isolation between them. This demonstrates the scheduling/affinity/
+# separation-of-concerns *design* and gets the real tooling (nodeSelector, taints,
+# podAntiAffinity) exercised, not genuine infrastructure-failure HA.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
   - role: control-plane
+  - role: worker
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "openlex.dev/workload=observability"
+          taints:
+            - key: openlex.dev/workload
+              value: observability
+              effect: NoSchedule
+  - role: worker
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "openlex.dev/workload=apps"
+  - role: worker
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "openlex.dev/workload=apps"

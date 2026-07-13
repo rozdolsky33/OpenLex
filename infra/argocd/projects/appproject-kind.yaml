@@ -12,6 +12,8 @@ spec:
     # Application below points at the upstream chart repo directly.
     - https://prometheus-community.github.io/helm-charts
     - https://open-telemetry.github.io/opentelemetry-helm-charts
+    - https://grafana.github.io/helm-charts
+    - https://jaegertracing.github.io/helm-charts
   destinations:
     - namespace: openlex
       server: https://kubernetes.default.svc

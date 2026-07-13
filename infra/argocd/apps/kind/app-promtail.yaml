@@ -1,0 +1,57 @@
+# infra/argocd/apps/kind/app-promtail.yaml
+#
+# Ships every pod's stdout/stderr to Loki (see infra/monitoring/promtail/values-base.yaml's
+# header for the full schema-verification notes). DaemonSet by chart default — unlike every
+# other observability component in this project (which get a nodeSelector pinning them to the
+# dedicated observability node), Promtail must run on EVERY node, including the apps nodes,
+# so it gets only tolerations, no nodeSelector.
+#
+# `tolerations` here lists all three entries the DaemonSet needs, not just the
+# observability-workload one: the chart's own default tolerations (master +
+# control-plane, so it schedules on the control-plane node despite its built-in
+# `node-role.kubernetes.io/control-plane:NoSchedule` taint) would otherwise be silently
+# dropped, since Helm values arrays replace rather than merge with the chart default. See
+# values-base.yaml's comment for the full explanation.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: promtail
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: openlex-kind
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: promtail
+      targetRevision: "6.17.*"
+      helm:
+        valueFiles:
+          - $values/infra/monitoring/promtail/values-base.yaml
+        valuesObject:
+          tolerations:
+            - key: node-role.kubernetes.io/master
+              operator: Exists
+              effect: NoSchedule
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+              effect: NoSchedule
+            - key: openlex.dev/workload
+              operator: Equal
+              value: observability
+              effect: NoSchedule
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { cpu: 100m, memory: 128Mi }
+    - repoURL: https://github.com/rozdolsky33/OpenLex.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

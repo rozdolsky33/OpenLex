@@ -1,0 +1,79 @@
+# infra/monitoring/jaeger/values-base.yaml
+#
+# Shared base values for Jaeger (v2 architecture — unifies collector+query+storage into one
+# process, built on OpenTelemetry Collector core). Comparison trace backend, run alongside
+# Tempo (the primary backend, see infra/monitoring/tempo/values-base.yaml and the design doc)
+# for capability comparison, not as the primary backend. Uses in-memory storage — no
+# Elasticsearch/Cassandra dependency — matching the "comparison-and-learning, not
+# production-shaped" scope of this pass. Data does not survive a pod restart — acceptable for
+# a comparison/demo backend, not acceptable if this were ever the primary store.
+# Environment-specific overrides (resources, node placement) live in the Application's own
+# valuesObject, not here.
+#
+# Verified against `helm show values jaegertracing/jaeger --version 4.11.*` (resolved to chart
+# 4.11.1, appVersion 2.19.0). The chart's own commented-out `userconfig` example (top of its
+# values.yaml) matches the task brief's sketch field-for-field — service.pipelines,
+# extensions.jaeger_query, extensions.jaeger_storage.backends, receivers.otlp,
+# exporters.jaeger_storage_exporter — so no structural adaptation was needed beyond swapping
+# the example's elasticsearch-backed primary_store for a memory-backed one (Jaeger v2's
+# `jaeger_storage` extension, `memory: {max_traces: <N>}` per Jaeger v2 docs — this key isn't
+# in the chart's own commented example since that example targets Elasticsearch, but the
+# schema for the `jaeger_storage` extension is shared across backend types).
+#
+# Also confirmed via the chart's rendered templates (jaeger-deploy.yaml, jaeger-user-config.yaml):
+#   - `userconfig` (when set) is dumped verbatim into a ConfigMap and passed to the jaeger
+#     binary via `--config /etc/jaeger/user-config.yaml` — it fully replaces the chart's
+#     built-in config, so the top-level `storage.type: elasticsearch` chart default is
+#     irrelevant here (it only drives the disabled esIndexCleaner/esRollover/spark jobs, none
+#     of which reference userconfig).
+#   - The Deployment's liveness/readiness probes hit `GET /status` on port 13133 — exactly the
+#     `healthcheckv2` extension's `http.endpoint: 0.0.0.0:13133` below, confirming this
+#     extension is required for the pod to ever go Ready, not just documentation boilerplate.
+#   - `jaeger.nodeSelector` / `jaeger.tolerations` / `jaeger.resources` are direct siblings
+#     under the top-level `jaeger:` key (confirmed: `jaeger.resources` appears commented-out
+#     at that exact path in the pinned chart's values.yaml) — matches the brief's assumption.
+#
+# One deviation found only by deploying live (not visible from `helm show values` alone): the
+# chart's own commented example lists `#processors: [batch]` *commented out* in the pipeline,
+# and the brief's sketch un-commented that reference without adding a matching top-level
+# `processors.batch: {}` block. The Jaeger v2 binary fails fast on startup with "invalid
+# configuration: service::pipelines::traces: references processor "batch" which is not
+# configured" if the pipeline names a processor that isn't declared elsewhere in the config.
+# Fixed by adding an explicit `processors.batch: {}` block below.
+userconfig:
+  service:
+    extensions: [jaeger_storage, jaeger_query, healthcheckv2]
+    pipelines:
+      traces:
+        receivers: [otlp]
+        processors: [batch]
+        exporters: [jaeger_storage_exporter]
+    telemetry:
+      resource:
+        service.name: jaeger
+  extensions:
+    healthcheckv2:
+      use_v2: true
+      http:
+        endpoint: 0.0.0.0:13133
+    jaeger_query:
+      base_path: /
+      storage:
+        traces: primary_store
+    jaeger_storage:
+      backends:
+        primary_store:
+          memory:
+            max_traces: 100000
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+  processors:
+    batch: {}
+  exporters:
+    jaeger_storage_exporter:
+      trace_storage: primary_store

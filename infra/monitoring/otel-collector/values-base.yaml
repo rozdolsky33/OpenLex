@@ -1,9 +1,10 @@
 # infra/monitoring/otel-collector/values-base.yaml
 #
 # Shared base values for the OTel Collector, consumed by both kind and any future eks-demo
-# Application. The exporters here are intentionally `debug`-only in this phase — Tempo,
-# Jaeger, and Loki don't exist yet (later phases add real exporters to these same
-# pipelines). This proves the receive-and-process path works before wiring real backends.
+# Application. Phase 1 proved the receive-and-process path with a `debug`-only exporter for
+# all three signals. Tempo and Jaeger are now deployed, so the `traces` pipeline exports to
+# both real backends for comparison. `metrics`/`logs` stay `debug`-only — Loki/a real metrics
+# backend for OTel-sourced data are later phases, not this one.
 
 mode: deployment
 
@@ -31,12 +32,20 @@ config:
   exporters:
     debug:
       verbosity: detailed
+    otlp/tempo:
+      endpoint: tempo.observability.svc.cluster.local:4317
+      tls:
+        insecure: true
+    otlp/jaeger:
+      endpoint: jaeger.observability.svc.cluster.local:4317
+      tls:
+        insecure: true
   service:
     pipelines:
       traces:
         receivers: [otlp]
         processors: [batch]
-        exporters: [debug]
+        exporters: [otlp/tempo, otlp/jaeger]
       metrics:
         receivers: [otlp]
         processors: [batch]

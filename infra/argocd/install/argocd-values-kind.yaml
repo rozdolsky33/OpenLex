@@ -8,18 +8,53 @@ configs:
     # told otherwise. See infra/kubernetes/base/postgres/kustomization.yaml.
     kustomize.buildOptions: "--load-restrictor LoadRestrictionsNone"
 
+# ArgoCD is platform tooling, not an application workload — schedule every component onto the
+# same dedicated `observability` node as the rest of the observability stack (Prometheus/
+# Grafana/Alertmanager/OTel Collector), rather than defaulting onto the `apps` nodes. This
+# nodeSelector/tolerations pair is repeated as sibling keys under each component below because
+# this chart version has no single global toggle that reliably covers server/repoServer/
+# controller/redis/dex all at once.
 server:
   resources:
     requests: { cpu: 25m, memory: 64Mi }
     limits: { cpu: 100m, memory: 128Mi }
+  nodeSelector:
+    openlex.dev/workload: observability
+  tolerations:
+    - key: openlex.dev/workload
+      operator: Equal
+      value: observability
+      effect: NoSchedule
 
 repoServer:
   resources:
     requests: { cpu: 25m, memory: 128Mi }
     limits: { cpu: 200m, memory: 256Mi }
+  nodeSelector:
+    openlex.dev/workload: observability
+  tolerations:
+    - key: openlex.dev/workload
+      operator: Equal
+      value: observability
+      effect: NoSchedule
 
 applicationSet:
+  # NOTE: `enabled: false` is a no-op in chart version argo-cd-10.1.3 (the pinned version —
+  # verified by pulling the chart and grepping templates/argocd-applicationset/: nothing
+  # references `.Values.applicationSet.enabled`, and the chart's own values.yaml doesn't even
+  # define an `enabled` sub-key under `applicationSet:`). The applicationset-controller
+  # Deployment is unconditionally rendered regardless of this setting — don't assume this flag
+  # disables the component. It's left here only as a statement of intent (we don't use
+  # ApplicationSets); the nodeSelector/tolerations below are what actually keeps the resulting
+  # Deployment off the apps nodes.
   enabled: false
+  nodeSelector:
+    openlex.dev/workload: observability
+  tolerations:
+    - key: openlex.dev/workload
+      operator: Equal
+      value: observability
+      effect: NoSchedule
 
 notifications:
   enabled: false
@@ -28,8 +63,38 @@ redis:
   resources:
     requests: { cpu: 10m, memory: 32Mi }
     limits: { cpu: 100m, memory: 64Mi }
+  nodeSelector:
+    openlex.dev/workload: observability
+  tolerations:
+    - key: openlex.dev/workload
+      operator: Equal
+      value: observability
+      effect: NoSchedule
+
+dex:
+  nodeSelector:
+    openlex.dev/workload: observability
+  tolerations:
+    - key: openlex.dev/workload
+      operator: Equal
+      value: observability
+      effect: NoSchedule
 
 controller:
+  # The application-controller caches the full live resource tree of every Application it
+  # manages. 256Mi was fine when this only watched the small `openlex` app; adding
+  # kube-prometheus-stack (hundreds of CRDs/resources: ServiceMonitors, PrometheusRules,
+  # Prometheus/Alertmanager operator-managed objects, etc.) pushed it into a sustained
+  # OOMKilled/CrashLoopBackOff (confirmed live: exitCode 137, reason OOMKilled, 13+ restarts).
+  # Bumped for the current 3-Application footprint (openlex, kube-prometheus-stack,
+  # otel-collector); revisit again if more Applications with large resource trees are added.
   resources:
-    requests: { cpu: 25m, memory: 128Mi }
-    limits: { cpu: 200m, memory: 256Mi }
+    requests: { cpu: 50m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 768Mi }
+  nodeSelector:
+    openlex.dev/workload: observability
+  tolerations:
+    - key: openlex.dev/workload
+      operator: Equal
+      value: observability
+      effect: NoSchedule
