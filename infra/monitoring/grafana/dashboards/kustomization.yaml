@@ -1,8 +1,7 @@
-# Each JSON file here becomes a key in the openlex-grafana-dashboards ConfigMap. The
-# grafana_dashboard: "1" label is what the kube-prometheus-stack Grafana sidecar (see
-# infra/monitoring/kube-prometheus-stack/values-base.yaml's grafana.sidecar.dashboards,
-# searchNamespace: ALL) watches for -- no manual "add dashboard" step in Grafana's UI, just
-# apply this ConfigMap and the sidecar picks it up within its poll interval.
+# Each dashboard folder becomes a grafana_dashboard: "1" ConfigMap. The
+# grafana_folder annotation tells the kube-prometheus-stack Grafana sidecar where to write
+# the files under /tmp/dashboards; Grafana then turns that directory structure into folders
+# via provider.foldersFromFilesStructure.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -12,10 +11,62 @@ kind: Kustomization
 namespace: observability
 
 configMapGenerator:
-  - name: openlex-grafana-dashboards
+  - name: openlex-grafana-dashboards-applications
     files:
-      - golden-signals-api.json
-      - tier-and-quota.json
+      - applications/golden-signals-api.json
+      - applications/tier-and-quota.json
     options:
+      annotations:
+        grafana_folder: /tmp/dashboards/Applications
+      labels:
+        grafana_dashboard: "1"
+  - name: openlex-grafana-dashboards-kubernetes
+    files:
+      - kubernetes/apiserver.json
+      - kubernetes/cluster-total.json
+      - kubernetes/controller-manager.json
+      - kubernetes/etcd.json
+      - kubernetes/k8s-coredns.json
+      - kubernetes/k8s-resources-cluster.json
+      - kubernetes/k8s-resources-multicluster.json
+      - kubernetes/k8s-resources-namespace.json
+      - kubernetes/k8s-resources-node.json
+      - kubernetes/k8s-resources-nodes-overview.json
+      - kubernetes/k8s-resources-pod.json
+      - kubernetes/k8s-resources-workload.json
+      - kubernetes/k8s-resources-workloads-namespace.json
+      - kubernetes/kubelet.json
+      - kubernetes/namespace-by-pod.json
+      - kubernetes/namespace-by-workload.json
+      - kubernetes/persistentvolumesusage.json
+      - kubernetes/pod-total.json
+      - kubernetes/proxy.json
+      - kubernetes/scheduler.json
+      - kubernetes/workload-total.json
+    options:
+      annotations:
+        grafana_folder: /tmp/dashboards/Kubernetes
+      labels:
+        grafana_dashboard: "1"
+  - name: openlex-grafana-dashboards-infrastructure
+    files:
+      - infrastructure/node-cluster-rsrc-use.json
+      - infrastructure/node-rsrc-use.json
+      - infrastructure/nodes-aix.json
+      - infrastructure/nodes-darwin.json
+      - infrastructure/nodes.json
+    options:
+      annotations:
+        grafana_folder: /tmp/dashboards/Infrastructure
+      labels:
+        grafana_dashboard: "1"
+  - name: openlex-grafana-dashboards-observability
+    files:
+      - observability/alertmanager-overview.json
+      - observability/grafana-overview.json
+      - observability/prometheus.json
+    options:
+      annotations:
+        grafana_folder: /tmp/dashboards/Observability
       labels:
         grafana_dashboard: "1"
