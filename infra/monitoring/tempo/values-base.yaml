@@ -46,3 +46,19 @@ tempo:
         path: /var/tempo/traces
       wal:
         path: /var/tempo/wal
+  # Off by chart default (metricsGenerator.enabled: false) -- without it, Grafana's Tempo
+  # datasource "Service Graph" tab and any TraceQL metrics query (rate()/histogram_over_time())
+  # fail with "error finding generators: empty ring", because there's no metrics-generator
+  # instance to ever register in the ring, confirmed live. Enabling it makes Tempo derive
+  # service-graph and span-metrics series from ingested traces and remote_write them to
+  # Prometheus (which needs prometheusSpec.enableRemoteWriteReceiver: true -- see
+  # infra/monitoring/kube-prometheus-stack/values-base.yaml).
+  metricsGenerator:
+    enabled: true
+    remoteWriteUrl: "http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090/api/v1/write"
+  overrides:
+    defaults:
+      metrics_generator:
+        processors:
+          - service-graphs
+          - span-metrics

@@ -52,6 +52,14 @@ prometheus:
     serviceMonitorNamespaceSelector: {}
     podMonitorSelectorNilUsesHelmValues: false
     podMonitorNamespaceSelector: {}
+    # Tempo's metrics-generator (infra/monitoring/tempo/values-base.yaml) pushes
+    # service-graph/span-metrics via Prometheus remote_write — that endpoint
+    # (/api/v1/write) is disabled by default (--web.enable-remote-write-receiver), so without
+    # this Tempo's writes would 404/501 and Grafana's TraceQL metrics queries (the Traces
+    # panel's "rate()" queries, service graph) would keep failing with "empty ring" (no
+    # generator ever successfully writes, though the deeper cause of that specific error was
+    # metrics-generator not being enabled at all -- see tempo's values file).
+    enableRemoteWriteReceiver: true
 
 prometheusOperator:
   # Prometheus Operator's own container resources — the operator control-loop process
