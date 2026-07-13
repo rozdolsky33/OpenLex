@@ -7,12 +7,20 @@
 # see the design doc's "Local kind vs EKS-demo consistency" section.
 
 grafana:
+  # Default kube-prometheus-stack dashboards are vendored under
+  # infra/monitoring/grafana/dashboards so they can be grouped into purpose-built
+  # Grafana folders instead of all landing in General.
+  defaultDashboardsEnabled: false
   sidecar:
     dashboards:
       enabled: true
       label: grafana_dashboard
       labelValue: "1"
       searchNamespace: ALL
+      folderAnnotation: grafana_folder
+      provider:
+        allowUiUpdates: false
+        foldersFromFilesStructure: true
     # grafana.sidecar.resources is a single key shared by every k8s-sidecar container the
     # grafana subchart renders (dashboards + datasources here; see charts/grafana/templates/
     # _pod.tpl, every sidecar container block reads .Values.sidecar.resources) — not

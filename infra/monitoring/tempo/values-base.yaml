@@ -31,6 +31,7 @@
 # hardening this beyond kind (see the design doc's kind/eks-demo consistency section).
 
 tempo:
+  memBallastSizeMbs: 128
   receivers:
     otlp:
       protocols:
