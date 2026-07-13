@@ -15,6 +15,7 @@ configMapGenerator:
     files:
       - applications/golden-signals-api.json
       - applications/tier-and-quota.json
+      - applications/trace-explorer.json
     options:
       annotations:
         grafana_folder: /tmp/dashboards/Applications
