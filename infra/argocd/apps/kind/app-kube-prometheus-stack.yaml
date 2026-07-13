@@ -73,6 +73,11 @@ spec:
                 access: proxy
                 url: http://jaeger.observability.svc.cluster.local:16686
                 isDefault: false
+              - name: Loki
+                type: loki
+                access: proxy
+                url: http://loki.observability.svc.cluster.local:3100
+                isDefault: false
           kube-state-metrics:
             nodeSelector:
               openlex.dev/workload: observability
