@@ -10,12 +10,21 @@ import uuid
 from legal_models.orm import Conversation, Message
 from legal_models.schemas import QueryResponse
 from legal_retrieval.search import SearchResult, hybrid_search
+from prometheus_client import Counter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from legal_generation.generator import generate_answer
 from legal_generation.reformulate import reformulate_query
 from legal_generation.types import ConversationTurn
+
+QUERY_ABSTAINED_TOTAL = Counter(
+    "openlex_query_abstained_total",
+    "Turns where generate_answer abstained (hard abstain on empty retrieval, or the "
+    "grounded-answer-contract's defense-in-depth abstain) -- see the Product & Usage "
+    "dashboard's abstain-rate panel, which divides this by openlex_http_requests_total"
+    '{route="/query"}.',
+)
 
 
 class ConversationNotFound(Exception):
@@ -85,6 +94,8 @@ async def handle_query_turn(
         session, standalone_question, top_k=top_k, doc_type=doc_type
     )
     response = await generate_answer(question, passages, history=history)
+    if response.abstained:
+        QUERY_ABSTAINED_TOTAL.inc()
 
     session.add(
         Message(
