@@ -62,3 +62,9 @@ tempo:
         processors:
           - service-graphs
           - span-metrics
+          # service-graphs/span-metrics alone still leaves ad-hoc TraceQL metrics queries
+          # (Grafana's Traces panel `| rate()`/`| quantile_over_time()` syntax, which calls
+          # Tempo's query_range API) failing with "localblocks processor not found" --
+          # confirmed live, a distinct error from "empty ring" above. That query path is
+          # specifically served by the local-blocks processor, not the other two.
+          - local-blocks
