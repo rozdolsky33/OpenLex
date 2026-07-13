@@ -37,11 +37,8 @@ def test_healthz_is_excluded_from_red_metrics() -> None:
 
 
 def test_response_carries_x_trace_id_header() -> None:
-    _override_session()
-
-    response = client.get("/healthz")
+    response = client.get("/metrics")
 
     assert "x-trace-id" in response.headers
     assert len(response.headers["x-trace-id"]) == 32
     int(response.headers["x-trace-id"], 16)  # must be valid hex
-    app.dependency_overrides.clear()

@@ -47,13 +47,12 @@ def setup_telemetry(app: FastAPI, engine: AsyncEngine | None = None) -> None:
     provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
 
-    # /healthz is polled continuously by k8s liveness/readiness probes. It's excluded from
-    # http_metrics.py's RED counters (see that module's _EXCLUDED_ROUTES comment) to avoid
-    # diluting the traffic dashboard, but NOT excluded from tracing -- a trace ID on every
-    # response (including /healthz) is valuable for correlation and debugging, even if it means
-    # a higher trace volume during steady-state probing. Probe failures still page via
-    # kube-prometheus-stack's default pod-not-ready/crashloop alerts at the k8s level.
-    FastAPIInstrumentor.instrument_app(app)
+    # /healthz is polled continuously by k8s liveness/readiness probes -- excluded from
+    # tracing for the same reason it's excluded from http_metrics.py's RED counters (see that
+    # module's _EXCLUDED_ROUTES comment): synthetic probe traffic shouldn't dilute trace
+    # volume or the traffic dashboard. Probe failures still page via kube-prometheus-stack's
+    # default pod-not-ready/crashloop alerts at the k8s level.
+    FastAPIInstrumentor.instrument_app(app, excluded_urls="/healthz")
     HTTPXClientInstrumentor().instrument()
 
     if engine is not None:
