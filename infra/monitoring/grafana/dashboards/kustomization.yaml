@@ -1,0 +1,21 @@
+# Each JSON file here becomes a key in the openlex-grafana-dashboards ConfigMap. The
+# grafana_dashboard: "1" label is what the kube-prometheus-stack Grafana sidecar (see
+# infra/monitoring/kube-prometheus-stack/values-base.yaml's grafana.sidecar.dashboards,
+# searchNamespace: ALL) watches for -- no manual "add dashboard" step in Grafana's UI, just
+# apply this ConfigMap and the sidecar picks it up within its poll interval.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Matches app-observability-dashboards.yaml's destination.namespace -- a manual
+# `kubectl kustomize ... | kubectl apply -f -` (Step 4) lands the ConfigMap in the same place
+# ArgoCD would put it, not the caller's current kubectl context namespace.
+namespace: observability
+
+configMapGenerator:
+  - name: openlex-grafana-dashboards
+    files:
+      - golden-signals-api.json
+      - tier-and-quota.json
+    options:
+      labels:
+        grafana_dashboard: "1"

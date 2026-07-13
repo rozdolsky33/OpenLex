@@ -1,0 +1,24 @@
+# Ships infra/monitoring/grafana/dashboards' ConfigMapGenerator output (grafana_dashboard: "1"
+# labeled ConfigMap) into the observability namespace, where the kube-prometheus-stack Grafana
+# sidecar (grafana.sidecar.dashboards, searchNamespace: ALL -- see
+# infra/monitoring/kube-prometheus-stack/values-base.yaml) picks it up automatically.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: observability-dashboards
+  namespace: argocd
+spec:
+  project: openlex-kind
+  source:
+    repoURL: https://github.com/rozdolsky33/OpenLex.git
+    targetRevision: main
+    path: infra/monitoring/grafana/dashboards
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
