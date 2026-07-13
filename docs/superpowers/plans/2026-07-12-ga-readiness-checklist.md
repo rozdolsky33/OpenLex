@@ -4,7 +4,7 @@ Flat tracking sheet — check items off as PRs merge. Full reasoning, acceptance
 file-level detail for each item live in
 `docs/superpowers/plans/2026-07-12-ga-readiness-roadmap.md`; this file is just the scoreboard.
 
-**Progress: 13 / 32 items complete (41%)** — update this line by hand as boxes get checked.
+**Progress: 17 / 36 items complete (47%)** — update this line by hand as boxes get checked.
 
 ## Phase 0 — Prep
 - [ ] 0.1 Fix `pipelines.yml` to actually run `apps/worker/tests`
@@ -28,15 +28,31 @@ file-level detail for each item live in
 
 ## Phase 3 — Production observability 🔴 blocker (superseded by expanded design)
 See `docs/superpowers/specs/2026-07-12-production-observability-design.md` (approved) and
-its per-phase implementation plans under `docs/superpowers/plans/2026-07-12-observability-phase*.md`.
+its per-phase implementation plans under `docs/superpowers/plans/2026-07-12-observability-phase*.md`
+and `docs/superpowers/plans/2026-07-13-observability-phase2-tracing-and-ha.md`.
 - [x] 3.3 `/metrics` endpoint exposed (done in the original Phase 1 tier-quota work)
 - [ ] 3.2 Error tracking (Sentry or equivalent) — still explicitly out of scope; separate
       cost/compliance decision, not part of the observability design
 - [x] 3.7 Observability Phase 1: kube-prometheus-stack + OTel Collector infra plumbing on kind
-- [ ] 3.8 Observability Phase 2: `apps/api` backend tracing (Tempo + Jaeger dual-export)
-- [ ] 3.9 Observability Phase 3: `apps/worker` + `postgres_exporter`
+- [x] 3.7a Multi-node kind topology: dedicated infra node (ArgoCD + entire observability
+      stack) vs. 2 apps nodes, with a real `kubectl drain` proving the PDB/anti-affinity HA
+      setup survives a node disruption with zero downtime
+- [x] 3.7b Tracing backends deployed and dual-verified: Tempo (primary) + Jaeger (comparison),
+      OTel Collector exports the same trace to both, Grafana datasources for both pass their
+      health check
+- [x] 3.7c Loki + Promtail log aggregation deployed (ships every pod's stdout, including
+      `apps/api`'s existing structured quota-event logs), Grafana Loki datasource healthy
+- [x] 3.7d Two initial Grafana dashboards (Golden Signals — API saturation panels + explicit
+      placeholders for the still-missing latency/traffic/error panels; Tier & Quota) —
+      verified against real traffic, not synthetic data
+- [ ] 3.8 Observability Phase 2 (app-level): `apps/api` emitting its own traces/spans via OTel
+      SDK, and the request-duration histogram the Golden Signals dashboard is still waiting on
+      — the infra-level Tempo/Jaeger backends exist (3.7b) but no application code sends
+      traces to them yet
+- [ ] 3.9 Observability Phase 3: `apps/worker` OTel instrumentation + `postgres_exporter`
 - [ ] 3.10 Observability Phase 4: `apps/web` browser tracing
-- [ ] 3.11 Observability Phase 5: Loki logs + dashboards + Alertmanager rules
+- [ ] 3.11 Alertmanager symptom-based alert rules (error rate, p99 latency, quota burn) — Loki
+      itself is done (3.7c), this item is specifically the alerting rules, still open
 
 ## Phase 4 — Legal/compliance content 🔴 blocker
 - [ ] 4.1 ToS/Privacy route + page live in `apps/web`, linked from auth screens
