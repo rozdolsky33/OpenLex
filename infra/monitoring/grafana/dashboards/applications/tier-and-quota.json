@@ -52,7 +52,7 @@
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true },
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
         "orientation": "horizontal",
         "textMode": "value_and_name",
         "colorMode": "value"
@@ -62,7 +62,8 @@
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "sum by (tier) (openlex_query_requests_total)",
-          "legendFormat": "{{tier}}"
+          "legendFormat": "{{tier}}",
+          "instant": true
         }
       ]
     },
@@ -105,7 +106,7 @@
         "overrides": []
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true },
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
         "orientation": "horizontal",
         "textMode": "value_and_name",
         "colorMode": "value"
@@ -115,7 +116,8 @@
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "sum by (tier) (openlex_query_quota_exceeded_total)",
-          "legendFormat": "{{tier}}"
+          "legendFormat": "{{tier}}",
+          "instant": true
         }
       ]
     }

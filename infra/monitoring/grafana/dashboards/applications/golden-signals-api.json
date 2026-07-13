@@ -2,11 +2,11 @@
   "id": null,
   "uid": "openlex-golden-signals-api",
   "title": "Golden Signals — API",
-  "description": "Traffic/error/latency/saturation for openlex-api. Latency, generic traffic, and error-rate still have no data source (see the panel notes) — Phase 3 (observability app instrumentation) added OTel traces and log/trace correlation but deliberately did not add an OTel metrics pipeline; see the panel text for exactly what's missing and why.",
+  "description": "Traffic/error/latency/saturation for openlex-api. Traffic, error-rate, and p50/p95/p99 latency are sourced from openlex_http_requests_total and openlex_http_request_duration_seconds (apps/api/src/openlex_api/http_metrics.py) -- a hand-rolled Prometheus RED middleware added because opentelemetry-instrumentation-fastapi's internal duration histogram silently no-ops here (no MeterProvider registered, see telemetry.py). CPU/memory saturation come from cAdvisor.",
   "tags": ["openlex", "golden-signals"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "editable": true,
   "refresh": "30s",
   "time": { "from": "now-1h", "to": "now" },
@@ -15,20 +15,110 @@
   "panels": [
     {
       "id": 1,
-      "type": "text",
-      "title": "Traffic — still not instrumented (checked again post-Phase-3)",
-      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "type": "timeseries",
+      "title": "Traffic — requests/sec by route (rate, 5m)",
+      "description": "sum by (route) (rate(openlex_http_requests_total[5m])) -- /metrics itself is excluded from these counters (see http_metrics.py), so this reflects real client traffic only.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" }
+        },
+        "overrides": []
+      },
       "options": {
-        "mode": "markdown",
-        "content": "**Traffic, error-rate, and p50/p95/p99 latency panels remain blocked after the Phase 3 app-instrumentation pass.** Re-verified directly against openlex-api's live `/metrics` output: it exports only `openlex_query_requests_total` and `openlex_query_quota_exceeded_total` (both `prometheus_client` Counters labeled `tier` only, see `apps/api/src/openlex_api/quota.py`) plus the default Python process/GC metrics — still no per-route HTTP request counter, no error-status breakdown, and no request-duration histogram. Phase 3 added `opentelemetry-instrumentation-fastapi` (see `apps/api/src/openlex_api/telemetry.py`), which *internally* calls `meter.create_histogram(...)` for `http.server.duration` — but that instrument is bound to whatever `MeterProvider` is globally registered, and this codebase never calls `opentelemetry.metrics.set_meter_provider(...)`, so it resolves to the OTel SDK's default no-op `ProxyMeterProvider`: the histogram silently records into nothing. Phase 3 only wired **traces** (spans in Tempo/Jaeger) and the logging bridge, not an OTel **metrics** pipeline. Tier/quota traffic (not generic HTTP traffic) is visible on the separate **Tier & Quota** dashboard. To unblock these panels, a future task needs to either (a) add a real OTel metrics pipeline — a `MeterProvider` + `PeriodicExportingMetricReader` wired to an OTLP or Prometheus exporter, registered via `set_meter_provider` before `FastAPIInstrumentor.instrument_app()` runs — or (b) add `prometheus-fastapi-instrumentator` (or hand-rolled `Histogram`/`Counter` middleware) directly exporting via the existing `/metrics` endpoint. Neither exists yet. Only CPU/memory saturation (below) can be shown for openlex-api today, from cAdvisor data."
-      }
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (route) (rate(openlex_http_requests_total[5m]))",
+          "legendFormat": "{{method}} {{route}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Error rate — 5xx/4xx as % of total (rate, 5m)",
+      "description": "sum(rate(openlex_http_requests_total{status_class=~\"4xx|5xx\"}[5m])) / sum(rate(openlex_http_requests_total[5m])) by route -- server errors (5xx) and client errors (4xx) tracked separately since only 5xx is actionable on-call, 4xx is often client misuse.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (route) (rate(openlex_http_requests_total{status_class=\"5xx\"}[5m])) / sum by (route) (rate(openlex_http_requests_total[5m]))",
+          "legendFormat": "5xx — {{route}}"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (route) (rate(openlex_http_requests_total{status_class=\"4xx\"}[5m])) / sum by (route) (rate(openlex_http_requests_total[5m]))",
+          "legendFormat": "4xx — {{route}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Latency — p50/p95/p99 by route (5m)",
+      "description": "histogram_quantile over openlex_http_request_duration_seconds_bucket by route -- averages hide the tail, so this deliberately only ever shows percentiles.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.5, sum by (le, route) (rate(openlex_http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50 — {{route}}"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(openlex_http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95 — {{route}}"
+        },
+        {
+          "refId": "C",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.99, sum by (le, route) (rate(openlex_http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p99 — {{route}}"
+        }
+      ]
     },
     {
       "id": 2,
       "type": "timeseries",
       "title": "CPU usage — openlex-api pods (cores)",
       "description": "rate() of container_cpu_usage_seconds_total for openlex-api pods, summed across containers per pod.",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
@@ -54,8 +144,8 @@
       "id": 3,
       "type": "timeseries",
       "title": "Memory working set — openlex-api pods (bytes)",
-      "description": "container_memory_working_set_bytes for openlex-api pods.",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "description": "sum by (pod) (container_memory_working_set_bytes) for openlex-api pods -- aggregated because cAdvisor emits both per-container and pod-level rows for the same pod, which without the sum produces duplicate legend entries.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
@@ -72,30 +162,10 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "container_memory_working_set_bytes{namespace=\"openlex\", pod=~\"openlex-api-.*\"}",
+          "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"openlex\", pod=~\"openlex-api-.*\"})",
           "legendFormat": "{{pod}}"
         }
       ]
-    },
-    {
-      "id": 4,
-      "type": "text",
-      "title": "Error rate — still not instrumented (checked again post-Phase-3)",
-      "gridPos": { "h": 4, "w": 12, "x": 0, "y": 12 },
-      "options": {
-        "mode": "markdown",
-        "content": "**No HTTP-level error-rate metric exists today, confirmed after Phase 3.** There is no per-status-code request counter anywhere in `apps/api` (grepped for `Histogram`/`Counter` from `prometheus_client` — only `quota.py`'s two tier-labeled counters exist, neither carries `status_code`). Traces do carry `http.status_code` per-request (visible in Tempo/Jaeger), but that's not the same as an aggregable error-rate metric for alerting/dashboards. Requires: an OTel metrics pipeline (`MeterProvider` + exporter) or `prometheus-fastapi-instrumentator` — not yet added."
-      }
-    },
-    {
-      "id": 5,
-      "type": "text",
-      "title": "p50/p95/p99 latency — still not instrumented (checked again post-Phase-3)",
-      "gridPos": { "h": 4, "w": 12, "x": 12, "y": 12 },
-      "options": {
-        "mode": "markdown",
-        "content": "**No latency metric exists today, confirmed after Phase 3.** `opentelemetry-instrumentation-fastapi`'s internal duration histogram is a no-op here because no `MeterProvider` was ever registered (`opentelemetry.metrics.set_meter_provider` is never called in this codebase — verified by reading the installed `opentelemetry-instrumentation-asgi` source, which creates the histogram via `self.meter.create_histogram(...)` against whatever provider `get_meter()` resolves to, i.e. the SDK's default no-op `ProxyMeterProvider`). Per-request latency *is* visible span-by-span in Tempo/Jaeger, but there's no aggregated p50/p95/p99 metric for a dashboard panel. Requires: a real OTel metrics pipeline (`MeterProvider` + `PeriodicExportingMetricReader` + OTLP/Prometheus exporter, registered before `FastAPIInstrumentor.instrument_app()` runs) or `prometheus-fastapi-instrumentator` — not yet added."
-      }
     }
   ]
 }

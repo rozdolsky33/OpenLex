@@ -11,6 +11,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from openlex_api.http_metrics import setup_http_metrics
 from openlex_api.routers import auth, ingest, query
 from openlex_api.telemetry import setup_telemetry
 
@@ -29,6 +30,7 @@ app = FastAPI(title="OpenLex API", lifespan=lifespan)
 # SQLAlchemyInstrumentor can't retroactively instrument an already-created AsyncEngine
 # without it.
 setup_telemetry(app, engine=engine)
+setup_http_metrics(app)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_allow_origins,
@@ -63,6 +65,6 @@ async def healthz(session: AsyncSession = Depends(get_session)) -> HealthRespons
 
 @app.get("/metrics")
 async def metrics() -> Response:
-    # Minimal, tier-labeled counters only (see openlex_api.quota) -- full auto-instrumented
-    # request-latency histograms are a separate, broader observability pass (GA roadmap Phase 3).
+    # Tier-labeled business counters (openlex_api.quota) plus generic HTTP RED metrics
+    # (openlex_api.http_metrics) for every route.
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
