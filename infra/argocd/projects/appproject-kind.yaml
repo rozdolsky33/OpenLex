@@ -21,6 +21,16 @@ spec:
       server: https://kubernetes.default.svc
     - namespace: observability
       server: https://kubernetes.default.svc
+    # kube-prometheus-stack creates a handful of Services in kube-system (coredns,
+    # kube-controller-manager, kube-etcd, kube-proxy, kube-scheduler) so Prometheus can
+    # discover and scrape these core Kubernetes components. Direct `helm upgrade` (used for
+    # local pre-merge verification throughout this project) doesn't enforce AppProject
+    # destination rules, so this went unnoticed until the first real ArgoCD-driven sync of
+    # this Application post-merge failed with "namespace kube-system is not permitted".
+    # These are read-only Service objects pointing at existing control-plane endpoints, not
+    # Pods/Deployments/Secrets — explicitly confirmed with the user before adding this.
+    - namespace: kube-system
+      server: https://kubernetes.default.svc
   clusterResourceWhitelist:
     - group: "*"
       kind: "*"
