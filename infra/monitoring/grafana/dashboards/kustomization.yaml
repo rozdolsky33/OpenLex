@@ -72,3 +72,11 @@ configMapGenerator:
         grafana_folder: /tmp/dashboards/Observability
       labels:
         grafana_dashboard: "1"
+  - name: openlex-grafana-dashboards-product
+    files:
+      - product/product-and-usage.json
+    options:
+      annotations:
+        grafana_folder: /tmp/dashboards/Product
+      labels:
+        grafana_dashboard: "1"
