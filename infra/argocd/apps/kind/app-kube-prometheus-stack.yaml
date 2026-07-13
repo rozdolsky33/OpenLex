@@ -64,16 +64,19 @@ spec:
               limits: { cpu: 300m, memory: 768Mi }
             additionalDataSources:
               - name: Tempo
+                uid: tempo
                 type: tempo
                 access: proxy
                 url: http://tempo.observability.svc.cluster.local:3200
                 isDefault: false
               - name: Jaeger
+                uid: jaeger
                 type: jaeger
                 access: proxy
                 url: http://jaeger.observability.svc.cluster.local:16686
                 isDefault: false
               - name: Loki
+                uid: loki
                 type: loki
                 access: proxy
                 url: http://loki.observability.svc.cluster.local:3100
