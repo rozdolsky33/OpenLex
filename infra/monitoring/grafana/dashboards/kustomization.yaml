@@ -64,6 +64,7 @@ configMapGenerator:
     files:
       - observability/alertmanager-overview.json
       - observability/grafana-overview.json
+      - observability/otel-collector.json
       - observability/prometheus.json
     options:
       annotations:

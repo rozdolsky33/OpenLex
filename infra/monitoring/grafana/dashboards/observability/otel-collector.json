@@ -1,0 +1,226 @@
+{
+  "id": null,
+  "uid": "openlex-otel-collector",
+  "title": "OTel Collector",
+  "description": "Self-observability for the OTel Collector deployment: receiver accept/refuse rates, exporter throughput/failures/queueing, and process health. Sourced from the collector's own Prometheus self-metrics on port 8888 (ports.metrics.enabled -- see infra/monitoring/otel-collector/values-base.yaml).",
+  "tags": ["openlex", "observability", "otel"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Receiver accepted vs. refused/failed spans (rate, 5m)",
+      "description": "rate(otelcol_receiver_accepted_spans[5m]) vs. rate(otelcol_receiver_refused_spans[5m]) / rate(otelcol_receiver_failed_spans[5m]) by receiver -- refused/failed above zero means the collector is dropping data before processing.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (receiver) (rate(otelcol_receiver_accepted_spans[5m]))",
+          "legendFormat": "accepted — {{receiver}}"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (receiver) (rate(otelcol_receiver_refused_spans[5m]))",
+          "legendFormat": "refused — {{receiver}}"
+        },
+        {
+          "refId": "C",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (receiver) (rate(otelcol_receiver_failed_spans[5m]))",
+          "legendFormat": "failed — {{receiver}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Exporter sent spans by backend (rate, 5m)",
+      "description": "rate(otelcol_exporter_sent_spans[5m]) by exporter -- otlp/tempo and otlp/jaeger should track each other closely since the same trace pipeline fans out to both (see values-base.yaml's traces pipeline).",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (exporter) (rate(otelcol_exporter_sent_spans[5m]))",
+          "legendFormat": "sent — {{exporter}}"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (exporter) (rate(otelcol_exporter_send_failed_spans[5m]))",
+          "legendFormat": "send failed — {{exporter}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Exporter queue saturation by backend",
+      "description": "otelcol_exporter_queue_size / otelcol_exporter_queue_capacity per exporter -- sustained values near 1 mean the collector can't keep up sending to that backend and will start dropping data.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "max": 1,
+          "min": 0,
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "otelcol_exporter_queue_size / otelcol_exporter_queue_capacity",
+          "legendFormat": "{{exporter}} ({{data_type}})"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Process memory RSS (bytes)",
+      "description": "otelcol_process_memory_rss for the collector pod -- compare against the container memory limit set in app-otel-collector.yaml's valuesObject.resources.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "otelcol_process_memory_rss",
+          "legendFormat": "{{pod}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Collector process uptime",
+      "description": "otelcol_process_uptime -- a low value on an established deployment means the pod recently restarted (crash, OOM, or a redeploy).",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "otelcol_process_uptime",
+          "legendFormat": "{{pod}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Batch processor: metadata cardinality",
+      "description": "otelcol_processor_batch_metadata_cardinality -- number of distinct batcher keys the batch processor is tracking; a runaway value signals unbounded label cardinality flowing through the pipeline.",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "otelcol_processor_batch_metadata_cardinality",
+          "legendFormat": "{{pod}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Process CPU usage (cores)",
+      "description": "rate(otelcol_process_cpu_seconds[5m]) -- compare against the container CPU limit set in app-otel-collector.yaml's valuesObject.resources.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(otelcol_process_cpu_seconds[5m])",
+          "legendFormat": "{{pod}}"
+        }
+      ]
+    }
+  ]
+}
