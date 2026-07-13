@@ -2,6 +2,9 @@ from datetime import date
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import anthropic
+import httpx
+import pytest
 from legal_generation.generator import generate_answer
 from legal_generation.types import ConversationTurn
 from legal_retrieval.search import SearchResult
@@ -20,9 +23,12 @@ PASSAGE = SearchResult(
 )
 
 
-def _mock_tool_response(input_dict: dict) -> SimpleNamespace:
+def _mock_tool_response(
+    input_dict: dict, *, input_tokens: int = 100, output_tokens: int = 50
+) -> SimpleNamespace:
     tool_block = SimpleNamespace(type="tool_use", input=input_dict)
-    return SimpleNamespace(content=[tool_block])
+    usage = SimpleNamespace(input_tokens=input_tokens, output_tokens=output_tokens)
+    return SimpleNamespace(content=[tool_block], usage=usage)
 
 
 async def test_generate_answer_abstains_without_calling_claude_when_no_passages() -> None:
@@ -137,3 +143,67 @@ async def test_generate_answer_without_history_sends_a_single_message_as_before(
     sent_messages = mock_client.messages.create.call_args.kwargs["messages"]
     assert len(sent_messages) == 1
     assert sent_messages[0]["role"] == "user"
+
+
+async def test_generate_answer_records_anthropic_metrics_on_success() -> None:
+    mock_client = AsyncMock()
+    mock_client.messages.create.return_value = _mock_tool_response(
+        {"abstained": False, "answer": "A tenant is defined as...", "used_chunk_ids": ["chunk-1"]},
+        input_tokens=200,
+        output_tokens=75,
+    )
+
+    with (
+        patch("legal_generation.generator.anthropic.AsyncAnthropic", return_value=mock_client),
+        patch("legal_generation.generator.record_anthropic_call") as mock_record,
+    ):
+        await generate_answer("what is a tenant?", passages=[PASSAGE])
+
+    mock_record.assert_called_once()
+    call_kwargs = mock_record.call_args.kwargs
+    assert call_kwargs["status"] == "success"
+    assert call_kwargs["input_tokens"] == 200
+    assert call_kwargs["output_tokens"] == 75
+    assert call_kwargs["duration_seconds"] >= 0
+
+
+async def test_generate_answer_classifies_rate_limit_and_reraises_unchanged() -> None:
+    mock_client = AsyncMock()
+    rate_limit_response = httpx.Response(
+        429, request=httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    )
+    mock_client.messages.create.side_effect = anthropic.RateLimitError(
+        "rate limited", response=rate_limit_response, body=None
+    )
+
+    with (
+        patch("legal_generation.generator.anthropic.AsyncAnthropic", return_value=mock_client),
+        patch("legal_generation.generator.record_anthropic_call") as mock_record,
+    ):
+        with pytest.raises(anthropic.RateLimitError):
+            await generate_answer("what is a tenant?", passages=[PASSAGE])
+
+    mock_record.assert_called_once()
+    call_kwargs = mock_record.call_args.kwargs
+    assert call_kwargs["status"] == "rate_limited"
+    assert call_kwargs["input_tokens"] == 0
+    assert call_kwargs["output_tokens"] == 0
+
+
+async def test_generate_answer_classifies_other_api_errors_and_reraises_unchanged() -> None:
+    mock_client = AsyncMock()
+    error_response = httpx.Response(
+        500, request=httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    )
+    mock_client.messages.create.side_effect = anthropic.APIStatusError(
+        "server error", response=error_response, body=None
+    )
+
+    with (
+        patch("legal_generation.generator.anthropic.AsyncAnthropic", return_value=mock_client),
+        patch("legal_generation.generator.record_anthropic_call") as mock_record,
+    ):
+        with pytest.raises(anthropic.APIStatusError):
+            await generate_answer("what is a tenant?", passages=[PASSAGE])
+
+    assert mock_record.call_args.kwargs["status"] == "api_error"
