@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 
 from legal_models.orm import User
 from legal_models.schemas import UserStatus
+from opentelemetry import trace
 from prometheus_client import Counter
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -127,10 +128,19 @@ async def check_and_consume_quota(session: AsyncSession, user: User) -> UserStat
 def _log_quota_event(
     user_id: uuid.UUID, tier: str, request_count: int, limit: int, *, exceeded: bool
 ) -> None:
+    # Explicitly embed trace_id in the JSON payload (not just relying on LoggingInstrumentor's
+    # surrounding format-string injection -- see apps/api/src/openlex_api/telemetry.py) so Loki
+    # can filter/correlate on it as a structured JSON field, not just a substring of the log
+    # line. None when there's no active/valid span (e.g. this ever ran outside a request
+    # context) -- never crashes on a missing span. PII guardrail: do not add anything else here
+    # beyond trace_id -- no question/answer text.
+    span_context = trace.get_current_span().get_span_context()
+    trace_id = format(span_context.trace_id, "032x") if span_context.is_valid else None
     logger.info(
         json.dumps(
             {
                 "event": "query_quota",
+                "trace_id": trace_id,
                 "user_id": str(user_id),
                 "tier": tier,
                 "request_count": request_count,
