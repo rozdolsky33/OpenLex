@@ -18,8 +18,12 @@ from prometheus_client import Counter, Histogram
 
 # Endpoints excluded from these metrics entirely -- /metrics is scraped by Prometheus itself
 # every 15-30s, which would otherwise show up as constant synthetic "traffic" unrelated to
-# real API usage and pollute the traffic/error-rate panels it's meant to feed.
-_EXCLUDED_ROUTES = frozenset({"/metrics"})
+# real API usage and pollute the traffic/error-rate panels it's meant to feed. /healthz is
+# hit continuously by k8s liveness and readiness probes for the same reason -- industry
+# standard is to exclude health-check traffic from application-level RED metrics and rely on
+# k8s's own pod-not-ready/crashloop alerting for probe failures (see
+# docs/superpowers/specs/2026-07-13-sre-dashboard-strategy-design.md).
+_EXCLUDED_ROUTES = frozenset({"/metrics", "/healthz"})
 
 HTTP_REQUESTS_TOTAL = Counter(
     "openlex_http_requests_total",
