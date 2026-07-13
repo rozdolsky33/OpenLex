@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Port-forwards every observability UI/endpoint at once — kind has no ingress (see
-# infra/kubernetes/README.md), so this replaces juggling five separate `kubectl
+# infra/kubernetes/README.md), so this replaces juggling six separate `kubectl
 # port-forward` terminals. Ctrl-C kills all of them (trap below).
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 NAMESPACE="observability"
+ARGOCD_NAMESPACE="argocd"
 
 pids=()
 cleanup() {
@@ -25,11 +26,17 @@ kubectl port-forward -n "${NAMESPACE}" svc/kube-prometheus-stack-alertmanager 90
 pids+=($!)
 kubectl port-forward -n "${NAMESPACE}" svc/otel-collector-opentelemetry-collector 4318:4318 &
 pids+=($!)
+# argocd-server serves both the UI and gRPC API over the same HTTPS port -- see
+# scripts/argocd-bootstrap.sh's own port-forward instructions, unified here so it's one
+# command instead of a separate terminal.
+kubectl port-forward -n "${ARGOCD_NAMESPACE}" svc/argocd-server 8080:443 &
+pids+=($!)
 
 echo "Grafana:      http://localhost:3000  (admin password: kubectl -n ${NAMESPACE} get secret kube-prometheus-stack-grafana -o jsonpath='{.data.admin-password}' | base64 -d)"
 echo "Prometheus:   http://localhost:9090"
 echo "Alertmanager: http://localhost:9093"
 echo "OTLP/HTTP:    http://localhost:4318  (for browser tracing in a later phase)"
+echo "ArgoCD:       https://localhost:8080  (admin password: kubectl -n ${ARGOCD_NAMESPACE} get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)"
 echo
 echo "Press Ctrl-C to stop all port-forwards."
 wait

@@ -4,7 +4,7 @@ Flat tracking sheet — check items off as PRs merge. Full reasoning, acceptance
 file-level detail for each item live in
 `docs/superpowers/plans/2026-07-12-ga-readiness-roadmap.md`; this file is just the scoreboard.
 
-**Progress: 19 / 36 items complete (53%)** — update this line by hand as boxes get checked.
+**Progress: 20 / 37 items complete (54%)** — update this line by hand as boxes get checked.
 
 ## Phase 0 — Prep
 - [ ] 0.1 Fix `pipelines.yml` to actually run `apps/worker/tests`
@@ -68,6 +68,33 @@ and `docs/superpowers/plans/2026-07-13-observability-phase2-tracing-and-ha.md`.
 - [ ] 3.10 Observability Phase 4: `apps/web` browser tracing
 - [ ] 3.11 Alertmanager symptom-based alert rules (error rate, p99 latency, quota burn) — Loki
       itself is done (3.7c), this item is specifically the alerting rules, still open
+- [x] 3.12 Observability revisit (2026-07-13): closed the Golden Signals metrics gap flagged in
+      3.8/3.9's notes — `apps/api/src/openlex_api/http_metrics.py` adds a hand-rolled
+      `prometheus_client` RED middleware (`openlex_http_requests_total` +
+      `openlex_http_request_duration_seconds`, route-templated labels, `/metrics` itself
+      excluded from its own counters) rather than wiring a second OTel metrics pipeline just
+      for this. Golden Signals dashboard's traffic/error-rate/p50-p95-p99 panels replaced with
+      real queries against it, live-verified. Also fixed in this pass, all live-verified
+      against the running kind cluster (not just code review):
+      - ArgoCD `application-controller` was OOMKilling every ~5min on a stale 256Mi limit —
+        768Mi was already committed (788ce4c) but `helm upgrade` had never been re-run to
+        apply it.
+      - otel-collector's Prometheus self-metrics port (8888) was never enabled
+        (`ports.metrics.enabled` defaults to `false` in the chart) — the ServiceMonitor
+        existed but had zero scrape targets, so no `otelcol_*` series existed anywhere. Fixed,
+        plus a new OTel Collector Grafana dashboard (receiver accept/refuse, exporter
+        sent/failed/queue-saturation, process health) now exists in the Observability folder.
+      - Tier & Quota dashboard's two stat panels were rendering as a wall of repeated
+        tier-name text — `reduceOptions.values: true` on a non-instant range query renders one
+        box per returned row (timestamp), not one per series. Fixed (`values: false` +
+        `instant: true` on the targets).
+      - Golden Signals' memory panel had a missing `sum by (pod)` aggregation, unlike its
+        sibling CPU panel — cAdvisor emits per-container and pod-level rows, producing
+        duplicate legend entries per pod.
+      - `apps/web` is now wired into the kind overlay (previously excluded — the exclusion
+        comment predated apps/web having a Dockerfile) and reachable locally via the new
+        `scripts/app-port-forward.sh`; `scripts/observability-port-forward.sh` now also
+        forwards `argocd-server`.
 
 ## Phase 4 — Legal/compliance content 🔴 blocker
 - [ ] 4.1 ToS/Privacy route + page live in `apps/web`, linked from auth screens

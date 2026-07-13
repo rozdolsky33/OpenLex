@@ -60,6 +60,15 @@ ports:
     enabled: true
   otlp-http:
     enabled: true
+  # The chart disables its own self-metrics port (8888) by default -- serviceMonitor.enabled
+  # alone is not enough, the chart's own values.yaml says so explicitly ("you need to enable
+  # the port in order to use the ServiceMonitor"). Without this, the ServiceMonitor below
+  # selects a port name ("metrics") that doesn't exist on the Service, so Prometheus has zero
+  # scrape targets for the collector -- confirmed live (no otelcol_* series anywhere, no
+  # scrape target registered at all), which is also why no OTel Collector dashboard has ever
+  # existed: there was nothing to build one from.
+  metrics:
+    enabled: true
 
 serviceMonitor:
   enabled: true
