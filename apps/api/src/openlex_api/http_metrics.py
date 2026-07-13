@@ -14,6 +14,7 @@ import time
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request, Response
+from opentelemetry import trace
 from prometheus_client import Counter, Histogram
 
 # Endpoints excluded from these metrics entirely -- /metrics is scraped by Prometheus itself
@@ -56,6 +57,15 @@ def setup_http_metrics(app: FastAPI) -> None:
         start = time.perf_counter()
         response = await call_next(request)
         duration = time.perf_counter() - start
+
+        # Correlation-ID ergonomics: read the same way quota.py's _log_quota_event does, so a
+        # caller (support session, curl, browser devtools) can grab this and paste it into
+        # either Tempo or Jaeger's "search by trace ID" box without needing server-log access.
+        # Applied to every response, including excluded routes below -- this is a debugging
+        # aid, not a metric, so it isn't subject to the same noise-reduction exclusion.
+        span_context = trace.get_current_span().get_span_context()
+        if span_context.is_valid:
+            response.headers["X-Trace-Id"] = format(span_context.trace_id, "032x")
 
         # scope["route"] is only populated by Starlette's Router once routing succeeds, which
         # happens inside call_next -- must be read post-dispatch, not before. Unmatched (404)
