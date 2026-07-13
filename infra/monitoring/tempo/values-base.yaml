@@ -1,0 +1,42 @@
+# infra/monitoring/tempo/values-base.yaml
+#
+# Shared base values for Tempo, consumed by both the kind Application and any future
+# eks-demo Application. This chart (grafana/tempo, not grafana/tempo-distributed) is
+# single-binary by design ("Grafana Tempo Single Binary Mode" per its own chart
+# description) — no config is needed to select that mode; it's the only mode this chart
+# offers. Local filesystem storage (the chart default, backed by an emptyDir when
+# `persistence.enabled` is left at its default `false`) — this is a comparison-and-learning
+# setup on kind (see the design doc), not a production-shaped deployment with S3/GCS-backed
+# storage or a PersistentVolumeClaim.
+#
+# Verified against `helm show values grafana/tempo --version 1.24.*` (resolved to chart
+# 1.24.4, appVersion 2.9.0) — this pinned version's schema differs materially from the task
+# brief's sketch, which assumed a top-level `traces: {otlp: {grpc: {enabled: ...}}}` block and
+# a top-level `storage.trace.backend` key. Neither exists in this chart. The real schema
+# nests both under `tempo.*`:
+#   - `tempo.receivers.otlp.protocols.{grpc,http}` — OTLP receivers are enabled by *presence*
+#     in this map (there's no separate enabled/disabled toggle), and grpc :4317 / http :4318
+#     are already the chart default. Kept here explicit rather than relying on the implicit
+#     default, since Task 4 (OTel Collector dual export) depends on this exact endpoint.
+#   - `tempo.storage.trace.backend: local` (with `local.path` / `wal.path` under
+#     `/var/tempo/...`) is also already the chart default — restated here as a confirmation,
+#     not an override.
+# `resources` for the tempo container lives under `tempo.resources` in this chart (there is no
+# top-level `resources` key) — the ArgoCD Application's valuesObject and the direct `helm`
+# install both set it at that path, not at the top level.
+
+tempo:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"
+        http:
+          endpoint: "0.0.0.0:4318"
+  storage:
+    trace:
+      backend: local
+      local:
+        path: /var/tempo/traces
+      wal:
+        path: /var/tempo/wal

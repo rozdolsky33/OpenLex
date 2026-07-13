@@ -1,0 +1,46 @@
+# infra/argocd/apps/kind/app-tempo.yaml
+#
+# Note: `resources` for the tempo container is set at `tempo.resources`, not top-level
+# `resources` — verified via `helm show values grafana/tempo --version 1.24.*` (chart 1.24.4);
+# this chart has no top-level `resources` key (see values-base.yaml's header comment for the
+# full schema verification notes).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tempo
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: openlex-kind
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: tempo
+      targetRevision: "1.24.*"
+      helm:
+        valueFiles:
+          - $values/infra/monitoring/tempo/values-base.yaml
+        valuesObject:
+          nodeSelector:
+            openlex.dev/workload: observability
+          tolerations:
+            - key: openlex.dev/workload
+              operator: Equal
+              value: observability
+              effect: NoSchedule
+          tempo:
+            resources:
+              requests: { cpu: 50m, memory: 128Mi }
+              limits: { cpu: 200m, memory: 256Mi }
+    - repoURL: https://github.com/rozdolsky33/OpenLex.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
