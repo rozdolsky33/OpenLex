@@ -1,0 +1,44 @@
+# infra/argocd/apps/kind/app-postgres-exporter.yaml
+#
+# Deliberate exception to the observability stack's usual `observability` namespace: this
+# Application's destination is `openlex`, so the exporter can reference the existing
+# `openlex-secrets` Secret directly (see infra/monitoring/postgres-exporter/values-base.yaml
+# for the full DSN-compatibility writeup) instead of duplicating DB credentials into a second
+# namespace. Prometheus already watches ServiceMonitors across every namespace
+# (`serviceMonitorSelectorNilUsesHelmValues: false`, fixed in observability Phase 1), so this
+# doesn't need to live in `observability` to be scraped.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgres-exporter
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: openlex-kind
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: prometheus-postgres-exporter
+      targetRevision: "8.1.1"
+      helm:
+        valueFiles:
+          - $values/infra/monitoring/postgres-exporter/values-base.yaml
+        valuesObject:
+          # Same `openlex.dev/workload: apps` pinning as postgres/openlex-api/openlex-worker
+          # (infra/kubernetes/overlays/kind/patch-resources.yaml) -- keeps this off the
+          # dedicated (tainted) observability node, consistent with everything else that
+          # actually lives in the `openlex` namespace.
+          nodeSelector:
+            openlex.dev/workload: apps
+    - repoURL: https://github.com/rozdolsky33/OpenLex.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openlex
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -18,6 +18,27 @@ spec:
       containers:
         - name: postgres
           image: pgvector/pgvector:pg16
+          # shared_preload_libraries can only be set at server start (not reloadable), so it's
+          # passed as an arg override rather than a runtime config change -- required for
+          # pg_stat_statements (slow-query / call-rate visibility via postgres_exporter, see
+          # docs/superpowers/specs/2026-07-12-production-observability-design.md). The
+          # extension itself (`CREATE EXTENSION pg_stat_statements`) still needs to be created
+          # once per database -- the postgres image's /docker-entrypoint-initdb.d scripts only
+          # run against a fresh (empty) PGDATA, not an already-initialized volume, so on an
+          # existing cluster this is a one-time manual `kubectl exec ... psql` step after this
+          # restart, same caveat migrations/postgres/*.sql already carries.
+          #
+          # Deliberately `args:`, NOT `command:` -- confirmed live the hard way: `command:`
+          # overrides the image's ENTRYPOINT (`docker-entrypoint.sh`), which is what drops
+          # privileges from root to the `postgres` user before exec'ing the server. Setting
+          # `command: [postgres, -c, ...]` bypassed that entrypoint entirely, ran `postgres`
+          # directly as root, and crash-looped with "root execution of the PostgreSQL server is
+          # not permitted". `args:` overrides only the image's CMD, which the entrypoint script
+          # still receives as "$@" and passes through after its own setup/privilege-drop.
+          args:
+            - postgres
+            - -c
+            - shared_preload_libraries=pg_stat_statements
           ports:
             - containerPort: 5432
               name: postgres

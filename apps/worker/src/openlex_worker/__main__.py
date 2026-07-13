@@ -6,6 +6,7 @@ import time
 from openlex_shared.config import settings
 
 from openlex_worker.cli import build_parser, run_ingest
+from openlex_worker.telemetry import setup_telemetry
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("openlex_worker")
@@ -25,15 +26,35 @@ def _heartbeat_loop() -> None:
 
 
 def main() -> None:
+    # This is a one-shot CLI process (unlike apps/api's long-running server) -- there is no
+    # next request to trigger BatchSpanProcessor's background export thread, so the
+    # TracerProvider returned here must be force-flushed before exit (see the `finally` below)
+    # or the last ingestion run's spans are silently lost.
+    provider = setup_telemetry()
     args = build_parser().parse_args()
+    exit_code = 0
 
-    if args.command == "ingest":
-        result = asyncio.run(run_ingest(args.source, force=args.force))
-        logger.info("ingest complete: %s", result.model_dump())
-        sys.exit(0 if not result.errors else 1)
-    else:
-        # No args (e.g. `docker compose up worker`'s CMD) -- keep the container alive.
-        _heartbeat_loop()
+    try:
+        if args.command == "ingest":
+            result = asyncio.run(run_ingest(args.source, force=args.force))
+            logger.info("ingest complete: %s", result.model_dump())
+            exit_code = 0 if not result.errors else 1
+        else:
+            # No args (e.g. `docker compose up worker`'s CMD) -- keep the container alive.
+            # _heartbeat_loop() runs forever in production (only exited by an external
+            # signal), so it never falls through to sys.exit() below -- preserve that (the
+            # `return` here matches the pre-existing behavior of this branch, which never
+            # called sys.exit).
+            _heartbeat_loop()
+            return
+    finally:
+        # A 10s timeout is generous for a handful of spans; if this ever times out in
+        # practice, that's worth investigating, not silently swallowing.
+        flushed = provider.force_flush(timeout_millis=10_000)
+        if not flushed:
+            logger.warning("otel_flush_incomplete: some spans may not have been exported")
+
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

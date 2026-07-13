@@ -3,6 +3,7 @@ from legal_generation.conversation import ConversationNotFound, handle_query_tur
 from legal_models.orm import User
 from legal_models.schemas import QueryRequest, QueryResponse
 from openlex_shared.db import get_session
+from opentelemetry import trace
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlex_api.auth import get_current_user
@@ -30,6 +31,13 @@ async def query(
             },
         ) from exc
 
+    # Manual span attributes for user-journey correlation on top of the auto-instrumented
+    # FastAPI span (see apps/api/src/openlex_api/telemetry.py). PII guardrail: never set
+    # req.question/response.answer (or any prefix/substring of either) as a span attribute.
+    span = trace.get_current_span()
+    span.set_attribute("user.tier", user.tier)
+    span.set_attribute("user.id", str(user.id))
+
     try:
         response = await handle_query_turn(
             session,
@@ -44,5 +52,7 @@ async def query(
         # -- collapsed into one 404 rather than distinguishing 404-vs-400, since the client
         # (this repo's future apps/web) never constructs a malformed conversation_id itself.
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    span.set_attribute("conversation.id", str(response.conversation_id))
 
     return response.model_copy(update={"usage": usage})
