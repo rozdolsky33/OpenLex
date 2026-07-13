@@ -8,15 +8,35 @@ configs:
     # told otherwise. See infra/kubernetes/base/postgres/kustomization.yaml.
     kustomize.buildOptions: "--load-restrictor LoadRestrictionsNone"
 
+# ArgoCD is platform tooling, not an application workload — schedule every component onto the
+# same dedicated `observability` node as the rest of the observability stack (Prometheus/
+# Grafana/Alertmanager/OTel Collector), rather than defaulting onto the `apps` nodes. This
+# nodeSelector/tolerations pair is repeated as sibling keys under each component below because
+# this chart version has no single global toggle that reliably covers server/repoServer/
+# controller/redis/dex all at once.
 server:
   resources:
     requests: { cpu: 25m, memory: 64Mi }
     limits: { cpu: 100m, memory: 128Mi }
+  nodeSelector:
+    openlex.dev/workload: observability
+  tolerations:
+    - key: openlex.dev/workload
+      operator: Equal
+      value: observability
+      effect: NoSchedule
 
 repoServer:
   resources:
     requests: { cpu: 25m, memory: 128Mi }
     limits: { cpu: 200m, memory: 256Mi }
+  nodeSelector:
+    openlex.dev/workload: observability
+  tolerations:
+    - key: openlex.dev/workload
+      operator: Equal
+      value: observability
+      effect: NoSchedule
 
 applicationSet:
   enabled: false
@@ -28,6 +48,22 @@ redis:
   resources:
     requests: { cpu: 10m, memory: 32Mi }
     limits: { cpu: 100m, memory: 64Mi }
+  nodeSelector:
+    openlex.dev/workload: observability
+  tolerations:
+    - key: openlex.dev/workload
+      operator: Equal
+      value: observability
+      effect: NoSchedule
+
+dex:
+  nodeSelector:
+    openlex.dev/workload: observability
+  tolerations:
+    - key: openlex.dev/workload
+      operator: Equal
+      value: observability
+      effect: NoSchedule
 
 controller:
   # The application-controller caches the full live resource tree of every Application it
@@ -40,3 +76,10 @@ controller:
   resources:
     requests: { cpu: 50m, memory: 256Mi }
     limits: { cpu: 500m, memory: 768Mi }
+  nodeSelector:
+    openlex.dev/workload: observability
+  tolerations:
+    - key: openlex.dev/workload
+      operator: Equal
+      value: observability
+      effect: NoSchedule
