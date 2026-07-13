@@ -33,7 +33,11 @@ into `main`:** if you verified it locally by applying directly (`kubectl kustomi
 apply` / `helm upgrade --install`) rather than waiting for ArgoCD — because ArgoCD's Helm
 multi-source `$values` reference or the `openlex` Application's single source can't see an
 unmerged branch — check that `syncPolicy.automated` is still enabled on the affected
-Application(s) (`kubectl get application <name> -n argocd -o jsonpath='{.spec.syncPolicy}'`;
+Application(s). As of the observability tracing/HA follow-up, the paused set is
+`root-kind`, `openlex`, `kube-prometheus-stack`, and `otel-collector` (confirm with
+`kubectl get application -n argocd -o custom-columns=NAME:.metadata.name,AUTOMATED:.spec.syncPolicy.automated`
+— any showing `<none>` needs re-enabling)
+(`kubectl get application <name> -n argocd -o jsonpath='{.spec.syncPolicy}'`;
 re-enable with `kubectl patch application <name> -n argocd --type merge -p
 '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true},"syncOptions":["CreateNamespace=true"]}}}'`
 if it was paused for local verification during development) and force a refresh

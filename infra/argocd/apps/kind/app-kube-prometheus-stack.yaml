@@ -90,13 +90,20 @@ spec:
               requests: { cpu: 10m, memory: 32Mi }
               limits: { cpu: 50m, memory: 64Mi }
           prometheus-node-exporter:
-            # DaemonSet — must run on every node (including the observability one, to report
-            # its own metrics), so only the toleration, no nodeSelector restricting it.
+            # DaemonSet — must run on every node (including control-plane and the dedicated
+            # observability node, to report their own metrics), so no nodeSelector restricting
+            # it. The chart's own default tolerations (verified: charts/prometheus-node-
+            # exporter/values.yaml) is a single blanket `{effect: NoSchedule, operator: Exists}`
+            # entry that already tolerates ANY NoSchedule taint, including control-plane's and
+            # our custom observability one. An earlier pass replaced this with only the
+            # observability-specific entry — Helm array-replace (not merge) semantics meant
+            # that silently dropped control-plane scheduling (confirmed live: node-exporter was
+            # missing from openlex-control-plane, exactly the same bug class Promtail hit and
+            # fixed in Task 9). Restoring the chart's own blanket form here, which covers both
+            # taints at once rather than listing them individually.
             tolerations:
-              - key: openlex.dev/workload
-                operator: Equal
-                value: observability
-                effect: NoSchedule
+              - effect: NoSchedule
+                operator: Exists
             resources:
               requests: { cpu: 10m, memory: 24Mi }
               limits: { cpu: 50m, memory: 48Mi }

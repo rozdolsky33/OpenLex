@@ -9,6 +9,16 @@ spec:
   # both replicas landing on whatever node is free. See
   # infra/kubernetes/overlays/kind/pdb-openlex-api.yaml for what backs this during voluntary
   # disruptions.
+  #
+  # CAVEAT (confirmed via a live kubectl drain test): this is `preferred`
+  # (soft) anti-affinity, not `required` — required would leave the evicted replica stuck
+  # Pending during a drain on a 2-apps-node cluster (no third node to land on), which defeats
+  # the point of draining at all. The tradeoff: after a drain-and-reschedule, both replicas can
+  # end up co-located on the same apps node (confirmed live — this actually happened), and
+  # nothing re-spreads them automatically afterward. The PDB-backed *disruption survivability*
+  # is real and proven; the *steady-state spread* is best-effort only, not self-healing. A
+  # Kubernetes descheduler (or a 3rd apps node) would be needed to restore the spread
+  # automatically — out of scope for this kind-scale setup.
   replicas: 2
   template:
     spec:

@@ -34,9 +34,13 @@ and `docs/superpowers/plans/2026-07-13-observability-phase2-tracing-and-ha.md`.
 - [ ] 3.2 Error tracking (Sentry or equivalent) — still explicitly out of scope; separate
       cost/compliance decision, not part of the observability design
 - [x] 3.7 Observability Phase 1: kube-prometheus-stack + OTel Collector infra plumbing on kind
-- [x] 3.7a Multi-node kind topology: dedicated infra node (ArgoCD + entire observability
-      stack) vs. 2 apps nodes, with a real `kubectl drain` proving the PDB/anti-affinity HA
-      setup survives a node disruption with zero downtime
+- [x] 3.7a Multi-node kind topology (1 control-plane + 3 workers): dedicated infra worker
+      node (ArgoCD + entire observability stack) vs. 2 apps worker nodes, with a real
+      `kubectl drain` proving the PDB survives a node disruption with zero downtime. Note:
+      the anti-affinity is soft (`preferred`, not `required` — a hard rule would leave the
+      evicted replica Pending on a 2-apps-node cluster) — disruption *survivability* is
+      proven, but steady-state pod *spread* is best-effort and doesn't self-heal after a
+      disruption (confirmed live: both replicas can end up on the same node post-drain)
 - [x] 3.7b Tracing backends deployed and dual-verified: Tempo (primary) + Jaeger (comparison),
       OTel Collector exports the same trace to both, Grafana datasources for both pass their
       health check
