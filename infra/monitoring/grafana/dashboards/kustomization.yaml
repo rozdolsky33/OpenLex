@@ -88,3 +88,11 @@ configMapGenerator:
         grafana_folder: /tmp/dashboards/Executive
       labels:
         grafana_dashboard: "1"
+  - name: openlex-grafana-dashboards-oncall
+    files:
+      - oncall/incident.json
+    options:
+      annotations:
+        grafana_folder: /tmp/dashboards/On-Call
+      labels:
+        grafana_dashboard: "1"
