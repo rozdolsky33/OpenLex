@@ -1,0 +1,114 @@
+# infra/monitoring/loki/values-base.yaml
+#
+# Shared base values for Loki, consumed by both the kind Application and any future eks-demo
+# Application. Single-binary/monolithic mode with local filesystem storage — comparison-and-
+# learning setup on kind (see the design doc), not a production-shaped deployment with
+# object-storage-backed chunks. Environment-specific overrides (resources, node placement)
+# live in the Application's own valuesObject, not here.
+#
+# Verified against `helm show values grafana/loki --version 7.0.*` (resolved to chart 7.0.0,
+# appVersion 3.6.7). The real schema differs materially from the task brief's sketch — this
+# chart supports 3 deployment topologies (SingleBinary / SimpleScalable / Distributed) selected
+# via the top-level `deploymentMode` key, and its *default* is `SimpleScalable`, not
+# SingleBinary:
+#   - `deploymentMode: SingleBinary` + `singleBinary.replicas: 1` (chart default is 0 — the
+#     StatefulSet only becomes real once replicas > 0) select the monolithic mode.
+#     `write.replicas`/`read.replicas`/`backend.replicas` (the SimpleScalable-mode targets,
+#     chart default: 3 each, regardless of `deploymentMode`) must be explicitly zeroed too —
+#     templates/validate.yaml `fail`s the render ("you have more than zero replicas configured
+#     for both the single binary and simple scalable targets") if both are left non-zero at
+#     once, confirmed by `helm template` erroring on exactly this before these lines were added.
+#   - `loki.storage.type: filesystem` (chart default is `s3`) is what actually routes the
+#     chart's `commonStorageConfig` helper into its `loki.storage.filesystem` branch
+#     (chunks_directory/rules_directory under /var/loki) instead of requiring S3/GCS/Azure
+#     bucket config — confirmed by reading templates/_helpers.tpl's `loki.isUsingObjectStorage`
+#     (true only for s3/gcs/azure/swift/alibabacloud/cos/bos) and `loki.commonStorageConfig`.
+#   - `loki.useTestSchema: true` (chart default: schemaConfig is `{}`, which the templated
+#     config silently omits — Loki would fail to start with no schema_config at all). The
+#     chart ships a ready-made TSDB v13 test schema specifically for this "testing or playing
+#     around" case (its own comment) — used here instead of hand-writing a schema_config.
+#   - `loki.auth_enabled: false` (chart default: true) — this is single-tenant, so pushes
+#     (including Task 9's OTLP log shipper) don't need an X-Scope-OrgID header.
+#   - `loki.commonConfig.replication_factor: 1` (chart default: 3, sized for HA
+#     SimpleScalable/Distributed mode): left at the chart default, every push and query
+#     returned HTTP 500 ("at least 2 live replicas required, could only find 1" / "too many
+#     unhealthy instances in the ring") against this real live deployment — a single
+#     SingleBinary replica can never satisfy a replication factor of 3. Confirmed fixed by
+#     testing an actual `/loki/api/v1/push` + `/loki/api/v1/query_range` round-trip after
+#     setting this to 1.
+#   - `singleBinary.persistence.enabled: true` (chart default) is kept, not disabled: unlike
+#     grafana/tempo, this chart's single-binary StatefulSet does NOT fall back to an emptyDir
+#     for /var/loki when persistence is disabled (verified in
+#     templates/single-binary/statefulset.yaml — the volume mount itself is only added
+#     `{{- if .Values.singleBinary.persistence.enabled }}`), and the container runs with
+#     `readOnlyRootFilesystem: true`. Disabling persistence would leave /var/loki unwritable.
+#     kind ships a default StorageClass (`standard`, rancher.io/local-path) so the PVC binds
+#     without extra config.
+#   - `gateway.enabled: false`: the chart's own `loki.host` helper (templates/_helpers.tpl)
+#     explicitly special-cases "SingleBinary mode + gateway disabled" by pointing callers
+#     (Grafana datasources, the loki-canary, etc.) straight at the singleBinary Service on
+#     `loki.server.http_listen_port` (3100) — a first-class supported combination, not a hack.
+#     In SingleBinary mode the one Loki process (`targetModule: all`) already serves every
+#     route (query API AND `/otlp/v1/logs` push) on that single port, so the gateway's nginx
+#     reverse proxy is pure redundant overhead for this setup.
+#   - `chunksCache.enabled: false` and `resultsCache.enabled: false` (chart default: both
+#     `true`): by default this chart deploys two extra memcached Deployments sized for real
+#     production traffic (`chunksCache.allocatedMemory: 8192` MB, `resultsCache.allocatedMemory:
+#     1024` MB, each requesting ~1.2x that as a memory *request*) — wildly oversized for a
+#     kind comparison/learning node whose whole Loki pod budget is 384Mi. Disabled; Loki runs
+#     fine without a chunk/results cache at this scale.
+#   - `lokiCanary.enabled: false` (chart default: true): the canary is a DaemonSet with no
+#     nodeSelector of its own, so left enabled it would schedule a pod on every node in the
+#     cluster (not just the observability node) — inconsistent with this project's
+#     node-pinning scheme for observability workloads. Disabled; nothing here depends on it.
+#   - `test.enabled: false` (chart default: true): the chart's own templates/validate.yaml
+#     `fail`s the render with "Helm test requires the Loki Canary to be enabled" if `test.enabled`
+#     is true while `lokiCanary.enabled` is false (confirmed by `helm template` erroring on
+#     exactly this before this line was added) — `test.enabled` only controls a `helm test`
+#     hook Pod that queries the (now-disabled) canary's metrics endpoint, nothing running here
+#     depends on it.
+#
+# `resources`/`nodeSelector`/`tolerations` for the actual Loki container all live under
+# `singleBinary.*` in this chart (there is no top-level `resources`/`nodeSelector` that
+# applies chart-wide — every component, gateway/write/read/backend/caches/canary, has its own)
+# — same "nested, not top-level" lesson as grafana/tempo (`tempo.resources`) and
+# jaegertracing/jaeger (`jaeger.resources`). The ArgoCD Application's valuesObject and the
+# direct `helm upgrade` both set these at `singleBinary.*`, not at the top level.
+
+deploymentMode: SingleBinary
+
+loki:
+  auth_enabled: false
+  useTestSchema: true
+  storage:
+    type: filesystem
+  commonConfig:
+    replication_factor: 1
+
+singleBinary:
+  replicas: 1
+
+# SimpleScalable-mode targets — must be explicitly zeroed even in SingleBinary mode (see the
+# validate.yaml note above); the chart's default of 3 replicas each applies regardless of
+# deploymentMode.
+write:
+  replicas: 0
+read:
+  replicas: 0
+backend:
+  replicas: 0
+
+gateway:
+  enabled: false
+
+chunksCache:
+  enabled: false
+
+resultsCache:
+  enabled: false
+
+lokiCanary:
+  enabled: false
+
+test:
+  enabled: false
