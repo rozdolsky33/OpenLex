@@ -27,9 +27,14 @@ server:
       effect: NoSchedule
 
 repoServer:
+  # Bumped from 256Mi after repeated OOMKills once a 10th Application (postgres-exporter) was
+  # added, each with its own Helm chart manifest generation in flight - confirmed live via
+  # `kubectl describe pod` showing `Last State: Terminated, Reason: OOMKilled` and a rising
+  # restart count that tracked directly with repo-server being asked to resolve a new chart
+  # source (observability Phase 3 post-merge verification).
   resources:
-    requests: { cpu: 25m, memory: 128Mi }
-    limits: { cpu: 200m, memory: 256Mi }
+    requests: { cpu: 25m, memory: 192Mi }
+    limits: { cpu: 200m, memory: 512Mi }
   nodeSelector:
     openlex.dev/workload: observability
   tolerations:
