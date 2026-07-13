@@ -39,7 +39,22 @@ repoServer:
       effect: NoSchedule
 
 applicationSet:
+  # NOTE: `enabled: false` is a no-op in chart version argo-cd-10.1.3 (the pinned version —
+  # verified by pulling the chart and grepping templates/argocd-applicationset/: nothing
+  # references `.Values.applicationSet.enabled`, and the chart's own values.yaml doesn't even
+  # define an `enabled` sub-key under `applicationSet:`). The applicationset-controller
+  # Deployment is unconditionally rendered regardless of this setting — don't assume this flag
+  # disables the component. It's left here only as a statement of intent (we don't use
+  # ApplicationSets); the nodeSelector/tolerations below are what actually keeps the resulting
+  # Deployment off the apps nodes.
   enabled: false
+  nodeSelector:
+    openlex.dev/workload: observability
+  tolerations:
+    - key: openlex.dev/workload
+      operator: Equal
+      value: observability
+      effect: NoSchedule
 
 notifications:
   enabled: false
