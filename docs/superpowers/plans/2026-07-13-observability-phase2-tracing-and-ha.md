@@ -781,30 +781,319 @@ plan is real, not just configured-and-hoped-for.
 
 ---
 
-### Task 8: Final verification pass and checklist update
+### Task 8: Deploy Loki (log aggregation)
+
+**Files:**
+- Create: `infra/monitoring/loki/values-base.yaml`
+- Create: `infra/argocd/apps/kind/app-loki.yaml`
+
+**Interfaces:**
+- Produces: a Loki instance reachable in-cluster with a native OTLP log-ingestion endpoint
+  (Loki 3.x+ supports this directly — confirmed via this chart's app version, 3.6.7). Task 9
+  depends on this endpoint to ship logs into it, and on Loki's query endpoint for the Grafana
+  datasource.
+
+**Why Loki now, even though no app emits OTel-format logs yet:** `apps/api`/`apps/worker`
+don't have OTel SDK logging instrumentation yet (that's backend-instrumentation, a later
+phase). This task and Task 9 get log aggregation working today against what already exists —
+every pod's stdout/stderr, including `apps/api`'s existing structured JSON quota-event logs
+(`openlex_api.quota._log_quota_event`) — via a node-level log shipper (Task 9), not by waiting
+for app-level OTel instrumentation.
+
+- [ ] **Step 1: Verify the chart's deployment mode and values schema**
+
+```bash
+helm repo add grafana https://grafana.github.io/helm-charts >/dev/null
+helm repo update grafana
+helm show values grafana/loki --version "7.0.*" | head -100
+```
+Confirm the single-binary/monolithic deployment mode (this chart supports several deployment
+topologies — `singleBinary`/monolithic is what we want, not the distributed
+microservices mode, matching every other backend's "comparison-and-learning setup on kind, not
+production-shaped" scope in this project). Identify the values keys for: single-binary mode
+selection, local filesystem storage (not S3/GCS), `resources`, `nodeSelector`, `tolerations`.
+
+- [ ] **Step 2: Write the shared values-base file**
+
+```yaml
+# infra/monitoring/loki/values-base.yaml
+#
+# Shared base values for Loki, consumed by both the kind Application and any future eks-demo
+# Application. Single-binary/monolithic mode with local filesystem storage — comparison-and-
+# learning setup on kind (see the design doc), not a production-shaped deployment with
+# object-storage-backed chunks. Environment-specific overrides (resources, node placement)
+# live in the Application's own valuesObject, not here.
+#
+# Fill in the real keys from Step 1's verification for: deployment mode = single-binary,
+# storage backend = local filesystem (not S3/GCS/minio), and confirm native OTLP log
+# ingestion is enabled by default for this chart/app version (3.6.7) — it should be, since
+# Loki added native OTLP ingestion in 3.x without needing extra config, but verify the
+# specific endpoint path (typically `/otlp/v1/logs`) against the actual chart's exposed
+# ports/routes.
+```
+
+- [ ] **Step 3: Write the ArgoCD Application**
+
+```yaml
+# infra/argocd/apps/kind/app-loki.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: openlex-kind
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: loki
+      targetRevision: "7.0.*"
+      helm:
+        valueFiles:
+          - $values/infra/monitoring/loki/values-base.yaml
+        valuesObject:
+          nodeSelector:
+            openlex.dev/workload: observability
+          tolerations:
+            - key: openlex.dev/workload
+              operator: Equal
+              value: observability
+              effect: NoSchedule
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 200m, memory: 384Mi }
+    - repoURL: https://github.com/rozdolsky33/OpenLex.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+```
+
+(Adjust `resources` from this starting guess if Step 1/deployment shows Loki needs more —
+verify empirically, same practice as every other component in this project.)
+
+- [ ] **Step 4: Deploy live and verify**
+
+```bash
+helm upgrade --install loki grafana/loki \
+  --version "7.0.*" \
+  --namespace observability --create-namespace \
+  --kube-context kind-openlex \
+  -f infra/monitoring/loki/values-base.yaml \
+  --set-json 'nodeSelector={"openlex.dev/workload":"observability"}' \
+  --set-json 'tolerations=[{"key":"openlex.dev/workload","operator":"Equal","value":"observability","effect":"NoSchedule"}]' \
+  --set-json 'resources={"requests":{"cpu":"50m","memory":"128Mi"},"limits":{"cpu":"200m","memory":"384Mi"}}'
+```
+
+Apply the ArgoCD Application object too (expect the same pre-merge `ComparisonError` pattern
+as every other Application this project has added since the original merge):
+```bash
+kubectl --context kind-openlex apply -f infra/argocd/apps/kind/app-loki.yaml
+```
+
+```bash
+kubectl --context kind-openlex get pods -n observability -l app.kubernetes.io/name=loki -o wide
+kubectl --context kind-openlex get svc -n observability -l app.kubernetes.io/name=loki
+```
+Expected: pod Running/Ready on the observability node; note the exact Service name and ports
+(query API — typically 3100 — and, if separate, the OTLP ingestion port) for Task 9.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add infra/monitoring/loki/values-base.yaml infra/argocd/apps/kind/app-loki.yaml
+git commit -m "Deploy Loki (log aggregation) to kind via ArgoCD"
+```
+
+---
+
+### Task 9: Ship pod logs to Loki via Promtail, add the Grafana datasource
+
+**Files:**
+- Create: `infra/monitoring/promtail/values-base.yaml`
+- Create: `infra/argocd/apps/kind/app-promtail.yaml`
+- Modify: `infra/argocd/apps/kind/app-kube-prometheus-stack.yaml`
+
+**Interfaces:**
+- Consumes: Loki's endpoint from Task 8.
+- Produces: every pod's stdout/stderr (including `apps/api`'s structured JSON quota-event
+  logs) queryable in Grafana via a Loki datasource.
+
+**Why Promtail, not the OTel Collector's own log-tailing:** the existing OTel Collector
+Application runs in `mode: deployment` (a single pod, receiving pushed OTLP data — it was
+never set up to tail node-local container log files). Promtail is the standard, well-
+documented, single-purpose tool for exactly this job (a DaemonSet that tails
+`/var/log/pods/*` on every node and ships to Loki) — adding this responsibility to the
+existing Collector would mean reconfiguring it into DaemonSet mode for an unrelated reason.
+Keep them separate, matching this project's existing "one focused component per job" pattern
+(e.g., Tempo and Jaeger are separate deployments, not merged into one).
+
+- [ ] **Step 1: Verify the chart's values schema and confirm Loki's ingestion endpoint**
+
+```bash
+helm repo add grafana https://grafana.github.io/helm-charts >/dev/null
+helm repo update grafana
+helm show values grafana/promtail --version "6.17.*" | grep -B2 -A10 "^config:\|clients:\|nodeSelector\|tolerations"
+```
+Confirm how to point Promtail's `clients` config at the Loki Service/port from Task 8
+(typically Loki's push API, `http://<loki-service>.observability.svc.cluster.local:3100/loki/api/v1/push`).
+Promtail is a DaemonSet by chart default — it must run on every node (including the
+observability node, apps nodes, and the control-plane, to capture pod logs everywhere), so
+unlike the other observability components in this project, it should NOT get a restrictive
+`nodeSelector` — only a `toleration` for the observability taint (same reasoning as
+`prometheus-node-exporter` in the kube-prometheus-stack task), so it isn't repelled from the
+one node it would otherwise be blocked from.
+
+- [ ] **Step 2: Write the shared values-base file**
+
+```yaml
+# infra/monitoring/promtail/values-base.yaml
+#
+# Shared base values for Promtail — ships every pod's stdout/stderr to Loki. DaemonSet by
+# chart default; must run on every node including the tainted observability node (see the
+# Application's tolerations, not a nodeSelector, since this needs to run everywhere).
+# Environment-specific overrides (resources, the Loki endpoint it points at) live in the
+# Application's own valuesObject, not here — fill in the real `config.clients[].url` schema
+# from Step 1's verification, pointed at Loki's Service from Task 8.
+```
+
+- [ ] **Step 3: Write the ArgoCD Application**
+
+```yaml
+# infra/argocd/apps/kind/app-promtail.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: promtail
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: openlex-kind
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: promtail
+      targetRevision: "6.17.*"
+      helm:
+        valueFiles:
+          - $values/infra/monitoring/promtail/values-base.yaml
+        valuesObject:
+          tolerations:
+            - key: openlex.dev/workload
+              operator: Equal
+              value: observability
+              effect: NoSchedule
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { cpu: 100m, memory: 128Mi }
+    - repoURL: https://github.com/rozdolsky33/OpenLex.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+```
+
+- [ ] **Step 4: Deploy live and confirm logs are actually flowing**
+
+```bash
+helm upgrade --install promtail grafana/promtail \
+  --version "6.17.*" \
+  --namespace observability --create-namespace \
+  --kube-context kind-openlex \
+  -f infra/monitoring/promtail/values-base.yaml \
+  --set-json 'tolerations=[{"key":"openlex.dev/workload","operator":"Equal","value":"observability","effect":"NoSchedule"}]' \
+  --set-json 'resources={"requests":{"cpu":"25m","memory":"64Mi"},"limits":{"cpu":"100m","memory":"128Mi"}}'
+```
+
+Confirm a Promtail pod is running on **every** node (all 4: control-plane + 3 workers):
+```bash
+kubectl --context kind-openlex get pods -n observability -l app.kubernetes.io/name=promtail -o wide
+```
+
+Then confirm logs actually landed in Loki by querying it directly (not just trusting Promtail
+is running) — generate a real log line first, then query for it:
+```bash
+kubectl --context kind-openlex exec -n openlex deployment/openlex-worker -- uv run --frozen python -m openlex_worker ingest --source statutes >/dev/null 2>&1 &
+sleep 5
+kubectl --context kind-openlex port-forward -n observability svc/loki 3100:3100 &
+PF_PID=$!
+sleep 3
+curl -sG "http://localhost:3100/loki/api/v1/query_range" \
+  --data-urlencode 'query={namespace="openlex"}' \
+  --data-urlencode 'limit=5' | python3 -m json.tool | head -30
+kill $PF_PID
+```
+Expected: real log lines from `openlex` namespace pods returned, not an empty result.
+
+- [ ] **Step 5: Add Loki as a Grafana datasource**
+
+Add to `infra/argocd/apps/kind/app-kube-prometheus-stack.yaml`'s existing `grafana:` block
+(alongside the `additionalDataSources` entries Task 5 already added for Tempo/Jaeger — append
+to that same list, don't create a second list):
+
+```yaml
+              - name: Loki
+                type: loki
+                access: proxy
+                url: http://loki.observability.svc.cluster.local:3100
+                isDefault: false
+```
+
+Re-apply via the same `helm upgrade` command family used for kube-prometheus-stack throughout
+this plan, then confirm via Grafana's datasource health-check API (same authenticated-`curl`
+pattern established in Task 5) that the Loki datasource shows a healthy connection.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add infra/monitoring/promtail/values-base.yaml infra/argocd/apps/kind/app-promtail.yaml infra/argocd/apps/kind/app-kube-prometheus-stack.yaml
+git commit -m "Ship pod logs to Loki via Promtail; add Loki as a Grafana datasource"
+```
+
+---
+
+### Task 10: Final verification pass and checklist update
 
 **Files:**
 - Modify: `docs/superpowers/plans/2026-07-12-ga-readiness-checklist.md`
 
 **Interfaces:** none.
 
-- [ ] **Step 1: Confirm ArgoCD placement (Task 1), Tempo (Task 2), Jaeger (Task 3), and the
-  dual-export (Task 4) are all still healthy after every other task's changes**
+- [ ] **Step 1: Confirm ArgoCD placement (Task 1), Tempo (Task 2), Jaeger (Task 3), the
+  dual-export (Task 4), and Loki/Promtail (Tasks 8-9) are all still healthy after every other
+  task's changes**
 
 ```bash
 kubectl --context kind-openlex get pods -n argocd -n observability -n openlex -o wide
 ```
 Expected: all pods `Running`/`Ready`, correct node placement per the design (ArgoCD +
-observability stack + Tempo + Jaeger all on the `observability`-labeled node; `openlex-api`/
-`worker`/`postgres` on the two `apps`-labeled nodes).
+observability stack + Tempo + Jaeger + Loki all on the `observability`-labeled node, Promtail
+on all 4 nodes as a DaemonSet; `openlex-api`/`worker`/`postgres` on the two `apps`-labeled
+nodes).
 
 - [ ] **Step 2: Update the checklist**
 
 Modify `docs/superpowers/plans/2026-07-12-ga-readiness-checklist.md`'s observability section,
 marking this phase's items complete (ArgoCD placement fix, Tempo, Jaeger, dual trace export,
-Grafana datasources, 2 initial dashboards, HA drain test) and noting the remaining gaps
-explicitly (full 7-dashboard set, Loki, `postgres_exporter`, backend app instrumentation,
-Alertmanager rules) so the next pass knows exactly what's left.
+Loki + Promtail log shipping, Grafana datasources, 2 initial dashboards, HA drain test) and
+noting the remaining gaps explicitly (full 7-dashboard set, `postgres_exporter`, backend app
+OTel instrumentation for traces/metrics/trace-correlated logs, Alertmanager rules) so the next
+pass knows exactly what's left.
 
 - [ ] **Step 3: Commit**
 
@@ -817,7 +1106,8 @@ git commit -m "Mark observability tracing/HA follow-up complete in the GA checkl
 
 - [ ] Every ArgoCD pod on the observability node, ArgoCD itself still healthy
 - [ ] Tempo and Jaeger both running, both confirmed to receive and store the same test trace
-- [ ] Grafana's Tempo and Jaeger datasources both pass their health check
+- [ ] Loki running, Promtail running on all 4 nodes, a real log line confirmed queryable
+- [ ] Grafana's Tempo, Jaeger, and Loki datasources all pass their health check
 - [ ] Two new dashboards visible in Grafana with real (or explicitly-labeled-as-pending) data
 - [ ] A real `kubectl drain` on an apps node did not drop `openlex-api` below 1 ready replica,
   and `/healthz` stayed reachable throughout
