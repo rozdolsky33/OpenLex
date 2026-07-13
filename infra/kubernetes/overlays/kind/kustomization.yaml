@@ -3,23 +3,26 @@ kind: Kustomization
 
 namespace: openlex
 
-# No ingress/TLS for kind — access via `kubectl port-forward`. web is intentionally excluded
-# (apps/web has no Dockerfile yet, see infra/kubernetes/README.md).
+# No ingress/TLS for kind — access via `kubectl port-forward` (scripts/app-port-forward.sh).
 resources:
   - ../../base/postgres
   - ../../base/api
   - ../../base/worker
+  - ../../base/web
   - servicemonitor-openlex-api.yaml
   - pdb-openlex-api.yaml
 
 # Images are built + `kind load docker-image`-ed locally (kind can't pull from nowhere) —
-# see scripts/kind-up.sh. Tags here must match what was loaded.
+# see scripts/kind-load-images.sh. Tags here must match what was loaded.
 images:
   - name: openlex-api
     newName: openlex-api
     newTag: kind-local
   - name: openlex-worker
     newName: openlex-worker
+    newTag: kind-local
+  - name: openlex-web
+    newName: openlex-web
     newTag: kind-local
 
 patches:

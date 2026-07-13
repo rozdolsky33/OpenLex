@@ -1,6 +1,7 @@
-# Scaffolded ahead of apps/web actually existing (no Dockerfile/package.json yet — see
-# CLAUDE.md "Current state"). Not referenced by any overlay today; wire it in once apps/web
-# is buildable.
+# apps/web's Dockerfile runs `npm run dev` (Vite dev server, hot reload) bound to 0.0.0.0:5173
+# -- it's a dev-server image, not a production nginx build, so containerPort is 5173, not 80.
+# Referenced only by overlays/kind (local dev access) -- eks-demo still has no image build/push
+# pipeline for apps/web, out of scope here.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -21,12 +22,27 @@ spec:
         - name: web
           image: openlex-web:placeholder
           ports:
-            - containerPort: 80
+            - containerPort: 5173
               name: http
+          env:
+            # Baked into the browser bundle by Vite (import.meta.env.VITE_API_BASE_URL, see
+            # apps/web/src/api/client.ts) -- evaluated client-side, so this must be reachable
+            # from the developer's own browser, not from inside the pod. Matches
+            # scripts/app-port-forward.sh's `kubectl port-forward svc/openlex-api 8000:80`, and
+            # openlex_shared.config's cors_allow_origins default
+            # (http://localhost:5173) already allows this pairing.
+            - name: VITE_API_BASE_URL
+              value: http://localhost:8000
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
           resources:
             requests:
-              cpu: 25m
-              memory: 64Mi
-            limits:
-              cpu: 100m
+              cpu: 50m
               memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 512Mi
