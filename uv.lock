@@ -887,6 +887,7 @@ dependencies = [
     { name = "anthropic" },
     { name = "legal-models" },
     { name = "legal-retrieval" },
+    { name = "prometheus-client" },
     { name = "sqlalchemy", extra = ["asyncio"] },
 ]
 
@@ -895,6 +896,7 @@ requires-dist = [
     { name = "anthropic", specifier = ">=0.42.0" },
     { name = "legal-models", editable = "packages/legal_models" },
     { name = "legal-retrieval", editable = "packages/legal_retrieval" },
+    { name = "prometheus-client", specifier = ">=0.25.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.36" },
 ]
 
