@@ -1,0 +1,30 @@
+# infra/kubernetes/overlays/eks-demo/migrate-job/kustomization.yaml
+#
+# One-time, manually-applied migration Job for RDS (not part of the ArgoCD-managed eks-demo
+# kustomization one level up — this directory is applied directly by an operator, once, after
+# RDS is provisioned and before openlex-api first starts):
+#   kubectl apply -k infra/kubernetes/overlays/eks-demo/migrate-job --load-restrictor=LoadRestrictionsNone
+# Re-running is safe: every migrations/postgres/*.sql file uses `CREATE TABLE IF NOT EXISTS`/
+# `CREATE INDEX IF NOT EXISTS` guards (see migrations/postgres/0001_init.sql), so a repeat
+# apply is a no-op, not destructive -- the same idempotency assumption
+# .github/workflows/integration.yml's CI migration-apply loop already relies on.
+namespace: openlex
+
+resources:
+  - job.yaml
+
+# Kustomize's default load restrictor refuses to read generator files from outside the
+# kustomization directory tree (same situation as infra/kubernetes/base/postgres), so building
+# this (directly, or transitively) requires `--load-restrictor LoadRestrictionsNone`
+# (`kubectl kustomize --load-restrictor=LoadRestrictionsNone ...` /
+# `kubectl apply -k ... --load-restrictor=LoadRestrictionsNone`). This directory isn't part of
+# the ArgoCD-managed tree, so ArgoCD's repo-wide `kustomize.buildOptions` doesn't cover it --
+# the operator applying this Job manually must pass the flag themselves.
+configMapGenerator:
+  - name: openlex-migrations
+    files:
+      - ../../../../../migrations/postgres/0001_init.sql
+      - ../../../../../migrations/postgres/0002_users.sql
+      - ../../../../../migrations/postgres/0003_conversations.sql
+      - ../../../../../migrations/postgres/0004_user_tiers.sql
+      - ../../../../../migrations/postgres/0005_conversation_ownership.sql

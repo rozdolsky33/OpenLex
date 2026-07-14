@@ -1,0 +1,38 @@
+# infra/kubernetes/overlays/eks-demo/migrate-job/job.yaml
+#
+# DATABASE_URL (from the openlex-secrets Secret, populated by External Secrets Operator from
+# Task 1's aws_secretsmanager_secret_version.app) uses the `postgresql+asyncpg://` scheme for
+# SQLAlchemy's async driver -- plain `psql` doesn't understand the `+asyncpg` suffix, so the
+# entrypoint strips it before connecting.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: openlex-migrate
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: postgres:16
+          envFrom:
+            - secretRef:
+                name: openlex-secrets
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              CONN="$(echo "$DATABASE_URL" | sed 's/postgresql+asyncpg/postgresql/')"
+              for f in $(ls /migrations/*.sql | sort); do
+                echo "Applying $f"
+                psql "$CONN" -v ON_ERROR_STOP=1 -f "$f"
+              done
+          volumeMounts:
+            - name: migrations
+              mountPath: /migrations
+      volumes:
+        - name: migrations
+          configMap:
+            name: openlex-migrations

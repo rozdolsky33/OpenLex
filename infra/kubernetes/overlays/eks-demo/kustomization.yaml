@@ -4,8 +4,9 @@ kind: Kustomization
 namespace: openlex
 
 # web is intentionally excluded (apps/web has no Dockerfile yet, see infra/kubernetes/README.md).
+# postgres is intentionally excluded -- eks-demo uses RDS (infra/terraform/rds.tf), not an
+# in-cluster StatefulSet. That stays kind-only (infra/kubernetes/overlays/kind/).
 resources:
-  - ../../base/postgres
   - ../../base/api
   - ../../base/worker
   - externalsecret-openlex.yaml
