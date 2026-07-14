@@ -4,7 +4,7 @@ Flat tracking sheet — check items off as PRs merge. Full reasoning, acceptance
 file-level detail for each item live in
 `docs/superpowers/plans/2026-07-12-ga-readiness-roadmap.md`; this file is just the scoreboard.
 
-**Progress: 24 / 43 items complete (56%)** — update this line by hand as boxes get checked.
+**Progress: 27 / 43 items complete (63%)** — update this line by hand as boxes get checked.
 (Recount 2026-07-14: prior "20/37" had drifted stale — items added during the observability
 work, e.g. 3.12-3.14, were never folded into the denominator.)
 
@@ -178,10 +178,27 @@ and `docs/superpowers/plans/2026-07-13-observability-phase2-tracing-and-ha.md`.
       tracing or alerting rules; they're fixes to what 3.13 already shipped. (Both closed
       2026-07-14 — see 3.10/3.11 above.)
 
-## Phase 4 — Legal/compliance content 🔴 blocker
-- [ ] 4.1 ToS/Privacy route + page live in `apps/web`, linked from auth screens
-- [ ] 4.2 Data-retention summary written, verified against actual schema
-- [ ] 4.3 Legal text explicitly flagged pending attorney review
+## Phase 4 — Legal/compliance content 🔴 blocker — engineering-complete 2026-07-14, attorney
+sign-off still required (see Sign-off gates below — that part is a human decision, not code)
+- [x] 4.1 ToS/Privacy route + page live in `apps/web` (`/legal`, no router dependency added —
+      checked via `window.location.pathname` in `App.tsx` since it's the only second route),
+      linked from `AuthScreen` (reachable pre-login, since it's checked before
+      `AuthProvider`/`AuthGate` mount) and from `ChatPage`'s header (reachable post-login).
+      Live-verified in-browser: both links navigate correctly, the page's own "Back to
+      OpenLex" link returns to the app.
+- [x] 4.2 Data-retention summary written and verified line-by-line against
+      `migrations/postgres/*.sql` (0001-0005): what's stored (email + bcrypt password hash,
+      tier + rolling request counter, per-turn question/answer/citations/abstained flag) and
+      what isn't (no payment data — the product has no billing; no analytics/ad trackers).
+      Also states, verified against `packages/legal_generation/generator.py`, that
+      questions/passages/history are sent to the Anthropic API for generation but
+      email/password never are, and that there's currently no automated retention/deletion
+      policy (`ON DELETE CASCADE` on `conversations.user_id` is the only cleanup mechanism,
+      and only fires on manual user deletion).
+- [x] 4.3 Legal text explicitly flagged pending attorney review — ToS and Privacy Policy each
+      in their own visually-distinct (amber) section headed "draft, pending attorney review"
+      with placeholder-intent text only, kept separate from the factual data-retention section
+      above (which is engineering-verified, not legal copy, and isn't flagged as pending).
 
 ## Phase 5 — Legal corpus expansion 🔴 blocker
 - [ ] 5.1 Statute coverage gap audit complete

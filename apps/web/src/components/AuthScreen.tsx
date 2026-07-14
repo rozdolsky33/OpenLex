@@ -32,6 +32,13 @@ export function AuthScreen() {
         <div className="mt-6 rounded-lg border border-slate-200 bg-white p-6 text-left shadow-sm">
           <LoginForm />
         </div>
+
+        <a
+          href="/legal"
+          className="mt-4 inline-block text-xs text-slate-400 underline hover:text-slate-300"
+        >
+          Privacy &amp; Terms
+        </a>
       </div>
     </div>
   );
