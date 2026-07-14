@@ -10,7 +10,7 @@ spec:
   project: openlex-kind
   source:
     repoURL: https://github.com/rozdolsky33/OpenLex.git
-    targetRevision: main
+    targetRevision: develop
     path: infra/kubernetes/overlays/kind
   destination:
     server: https://kubernetes.default.svc

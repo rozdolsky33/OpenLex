@@ -5,25 +5,25 @@ namespace: openlex
 
 # No ingress/TLS for kind — access via `kubectl port-forward` (scripts/app-port-forward.sh).
 resources:
-  - ../../base/postgres
-  - ../../base/api
-  - ../../base/worker
-  - ../../base/web
-  - servicemonitor-openlex-api.yaml
-  - pdb-openlex-api.yaml
+- ../../base/postgres
+- ../../base/api
+- ../../base/worker
+- ../../base/web
+- servicemonitor-openlex-api.yaml
+- pdb-openlex-api.yaml
 
 # Images are built + `kind load docker-image`-ed locally (kind can't pull from nowhere) —
 # see scripts/kind-load-images.sh. Tags here must match what was loaded.
 images:
-  - name: openlex-api
-    newName: openlex-api
-    newTag: kind-local
-  - name: openlex-worker
-    newName: openlex-worker
-    newTag: kind-local
-  - name: openlex-web
-    newName: openlex-web
-    newTag: kind-local
+- name: openlex-api
+  newName: ghcr.io/rozdolsky33/openlex-api
+  newTag: 5f7acbde56b26ce944411c7f740c1c0a0b9743fb
+- name: openlex-web
+  newName: ghcr.io/rozdolsky33/openlex-web
+  newTag: 5f7acbde56b26ce944411c7f740c1c0a0b9743fb
+- name: openlex-worker
+  newName: ghcr.io/rozdolsky33/openlex-worker
+  newTag: 5f7acbde56b26ce944411c7f740c1c0a0b9743fb
 
 patches:
-  - path: patch-resources.yaml
+- path: patch-resources.yaml

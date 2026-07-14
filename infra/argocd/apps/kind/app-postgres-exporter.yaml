@@ -31,7 +31,7 @@ spec:
           nodeSelector:
             openlex.dev/workload: apps
     - repoURL: https://github.com/rozdolsky33/OpenLex.git
-      targetRevision: main
+      targetRevision: develop
       ref: values
   destination:
     server: https://kubernetes.default.svc

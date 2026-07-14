@@ -11,7 +11,7 @@ spec:
   project: openlex-kind
   source:
     repoURL: https://github.com/rozdolsky33/OpenLex.git
-    targetRevision: main
+    targetRevision: develop
     path: infra/monitoring/grafana/dashboards
   destination:
     server: https://kubernetes.default.svc

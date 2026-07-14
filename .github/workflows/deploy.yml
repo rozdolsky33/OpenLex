@@ -1,0 +1,104 @@
+# .github/workflows/deploy.yml
+name: deploy
+
+on:
+  push:
+    branches:
+      - develop
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-develop
+      cancel-in-progress: false # queue, don't cancel/collide -- primary defense against a
+        # human merge to develop landing mid-run and making the final `git push origin
+        # HEAD:develop` a non-fast-forward rejection.
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_OWNER: ${{ github.repository_owner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Multi-platform build support -- GitHub-hosted runners are linux/amd64, but this
+      # project's kind cluster runs on Apple Silicon (linux/arm64). Without this, every image
+      # below would only ever be built for the runner's own architecture, and the arm64 kind
+      # cluster would have to fall back to QEMU *runtime* emulation to run an amd64 image --
+      # discovered live via a real crash: apps/web's container segfaulted under that emulation
+      # (`qemu: uncaught target signal 11`), a well-known failure mode for Vite/esbuild's
+      # native bindings (apps/api and apps/worker are pure Python and tolerated the same
+      # emulation fine, just not apps/web). setup-qemu-action here is for buildx's
+      # *cross-compilation* at build time (a different, working use of QEMU than the broken
+      # runtime-emulation path above) -- the result is a real multi-arch manifest list, so
+      # kind (arm64) and any future amd64 target (e.g. EKS, Phase 7) each pull their own
+      # native build with no emulation involved at any point.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push openlex-api
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/openlex-api:${{ github.sha }}
+
+      - name: Build and push openlex-worker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/worker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/openlex-worker:${{ github.sha }}
+
+      - name: Build and push openlex-web
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/web
+          file: apps/web/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/openlex-web:${{ github.sha }}
+
+      - name: Bump image tags in the kind overlay
+        run: |
+          curl -sL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.4.3/kustomize_v5.4.3_linux_amd64.tar.gz" | tar xz
+          cd infra/kubernetes/overlays/kind
+          ../../../../kustomize edit set image \
+            openlex-api=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/openlex-api:${{ github.sha }} \
+            openlex-worker=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/openlex-worker:${{ github.sha }} \
+            openlex-web=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/openlex-web:${{ github.sha }}
+
+      - name: Commit and push the tag bump
+        # Pushes with this job's own GITHUB_TOKEN (via checkout@v4's default
+        # persist-credentials: true) do NOT trigger new workflow runs -- this is what stops
+        # this bot commit from re-triggering deploy.yml in an infinite loop. Do not swap this
+        # for a PAT to "make it trigger downstream CI" without addressing that loop risk.
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add infra/kubernetes/overlays/kind/kustomization.yaml
+          if git diff --cached --quiet; then
+            echo "No image-tag changes to commit (rebuilt identical digests)."
+          else
+            git commit -m "chore: deploy ${{ github.sha }}"
+            git push origin HEAD:develop
+          fi
