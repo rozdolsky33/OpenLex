@@ -11,6 +11,8 @@ resources:
   - ../../base/worker
   - externalsecret-openlex.yaml
   - ingress-api.yaml
+  - pdb-openlex-api.yaml
+  - storageclass-gp3.yaml
 
 # Replace <ECR_ACCOUNT>.dkr.ecr.<REGION>.amazonaws.com with `terraform output ecr_repository_urls`
 # (infra/terraform) after the first apply, and bump the tag on every image push. See

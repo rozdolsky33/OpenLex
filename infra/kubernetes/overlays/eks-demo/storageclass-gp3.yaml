@@ -1,0 +1,20 @@
+# infra/kubernetes/overlays/eks-demo/storageclass-gp3.yaml
+#
+# The aws-ebs-csi-driver EKS addon (infra/terraform/eks.tf, Task 4) installs the CSI driver
+# itself but does not create a gp3 StorageClass automatically -- EKS's built-in default is
+# still the older in-tree "gp2" StorageClass. Marked as the cluster's default StorageClass so
+# Tempo's and Loki's PVCs (Tasks 6/7) bind automatically without needing an explicit
+# storageClassName override in either chart's values -- the same "just works" experience kind
+# gets from its own default `standard` StorageClass. Cluster-scoped -- kustomize's
+# `namespace: openlex` transformer (this overlay's global setting) only affects namespaced
+# resources, so it's safe to include here.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer
+parameters:
+  type: gp3
