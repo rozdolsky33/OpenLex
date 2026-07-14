@@ -19,18 +19,18 @@ verifying the Secrets Manager + External Secrets Operator integration that alrea
 manifest form but has never actually run.
 
 **Explicitly in scope:** RDS Postgres for the eks-demo/production path (7.1), verifying and
-completing the existing Secrets Manager + External Secrets Operator manifests (7.2), an
-explicit opt-in path for local kind to use real AWS Secrets Manager/RDS instead of local
-`.env`/in-cluster Postgres (7.3), Terraform remote state (7.4, closes the old 6.4), and a
-Postgres backup/DR strategy (7.5, closes the old 6.5).
+completing the existing Secrets Manager + External Secrets Operator manifests (7.2),
+documenting the deliberate environment isolation between local kind and cloud (7.3), Terraform
+remote state (7.4, closes the old 6.4), and a Postgres backup/DR strategy (7.5, closes the old
+6.5).
 
 **Explicitly out of scope:** actually running `terraform apply` against a real AWS account, or
 any other live AWS deployment/verification — confirmed with the user: this phase produces
 real, complete, `terraform validate`-clean infrastructure-as-code and manifests, ready to
 deploy whenever a live EKS demo is actually wanted, not a live deployment itself. No changes
 to `docker-compose.yml` or the `develop`/kind GitOps pipeline from Phase 6 — those stay
-exactly as they are; this phase only touches the `eks-demo` overlay/Terraform and adds a new,
-separate, opt-in local bootstrap path.
+exactly as they are, and (per a design revision — see 7.3) local kind never gains any path to
+real AWS resources at all, not even an optional one.
 
 ## 7.1 — RDS Postgres
 
@@ -75,7 +75,7 @@ backups, no managed failover, no serious DR story.
 ```mermaid
 flowchart TB
     subgraph AWS["AWS (eks-demo, not yet deployed)"]
-        TF["terraform apply<br/>rds.tf"] --> RDS[("RDS Postgres 16<br/>+ pgvector<br/>db.t4g.micro")]
+        TF["terraform apply<br/>rds.tf"] --> RDS[("RDS Postgres 16<br/>+ pgvector<br/>db.t4g.micro<br/>publicly_accessible=false")]
         TF --> SM["AWS Secrets Manager<br/>openlex/app secret"]
         TF -- "writes DATABASE_URL<br/>from the real RDS endpoint" --> SM
         SM -- "IRSA-authenticated pull<br/>(no static AWS creds)" --> ESO["External Secrets<br/>Operator"]
@@ -83,10 +83,20 @@ flowchart TB
         K8S -- "envFrom" --> API["apps/api, apps/worker"]
         API -- "DATABASE_URL" --> RDS
         MigJob["migrate-job.yaml<br/>(one-time)"] -- "applies migrations/postgres/*.sql" --> RDS
+        Debug["kubectl run -it --rm psql-debug<br/>(occasional operator access only)"] -.-> RDS
     end
 
     style AWS fill:#f4f0fa,stroke:#5a4a8a
 ```
+
+**Occasional operator access (not routine dev workflow):** RDS is never publicly reachable —
+no bastion host, no SSM proxy, no VPN. For the rare case of needing to run `psql` against the
+real instance directly (debugging, a one-off manual query), the EKS cluster itself is already
+inside the VPC with a security-group path to RDS, so a throwaway debug pod is the simplest
+correct answer: `kubectl run -it --rm psql-debug --image=postgres:16 -- psql $DATABASE_URL`.
+Zero new AWS resources, reuses infrastructure that already exists, standard k8s operational
+pattern — deliberately chosen over a dedicated bastion/SSM Session Manager setup, which would
+be more infrastructure for the same result.
 
 ## 7.2 — Secrets Manager + External Secrets Operator: verify and complete
 
@@ -118,49 +128,49 @@ verification here means:
   new infrastructure, unless the review finds a real bug (in which case, fix it, and note it
   explicitly as "found during verification," not silently).
 
-## 7.3 — Local AWS-backed bootstrap option
+## 7.3 — Environment isolation: local kind never talks to real AWS
 
-**Problem:** the only way to run this project locally today is kind + local Postgres + a
-plain `.env`-derived k8s Secret. There's no way to point local kind at real AWS Secrets
-Manager/RDS for a developer who wants to test against real cloud resources without standing
-up all of eks-demo.
+**Revised during design review.** The original sketch of this item proposed an opt-in hybrid
+mode letting local kind pull secrets/connect to RDS from real AWS. Deliberately dropped, not
+built: letting a developer's laptop reach into a cloud database is the specific anti-pattern
+real platform teams try to eliminate, not something worth building convenience tooling for —
+and once local and cloud are properly separated, there's no real problem left for a hybrid
+mode to solve.
 
-**Design:** kind has no IRSA (that's an EKS-only OIDC-federation feature — `scripts/
-kind-secrets-bootstrap.sh`'s own comment already documents this as the reason kind can't use
-External Secrets Operator). Rather than installing ESO on kind with a less-rotatable static
-IAM credential (rejected — adds an operator plus a standing AWS credential to a local
-cluster for no real benefit), this extends the *existing* bootstrap-script pattern:
+**Design — this item is now a documented boundary, not new code:**
 
-- New `scripts/kind-aws-secrets-bootstrap.sh`, sibling to `kind-secrets-bootstrap.sh`: uses
-  the developer's own local AWS CLI credentials (`~/.aws/credentials` or environment
-  variables — never stored in this repo, never touching `.env`) to call
-  `aws secretsmanager get-secret-value --secret-id openlex/app`, then creates/updates the
-  **same** `openlex-secrets` k8s Secret name via `kubectl create secret generic ... --dry-run
-  =client -o yaml | kubectl apply -f -` — identical idempotent pattern, identical target
-  Secret name, so `infra/kubernetes/base/{api,worker}`'s `envFrom` doesn't need to know or
-  care which bootstrap script populated it.
-- "Opting in" is simply: run `kind-aws-secrets-bootstrap.sh` instead of
-  `kind-secrets-bootstrap.sh`. No new kustomize overlay, no flag, no prompt — one is the
-  local-only path, the other is the AWS-backed path, and a developer picks by which script
-  they run. `apps/api`/`apps/worker` never know or care which one populated `openlex-secrets`
-  or what `DATABASE_URL` actually points to.
-- The local kind Postgres `StatefulSet` keeps running either way (not worth a new overlay
-  variant just to omit one idle pod) — in AWS-backed mode, it simply goes unused once
-  `DATABASE_URL` points at the real RDS endpoint instead.
-- `COURTLISTENER_API_TOKEN`-style framing applies here too: `kind-aws-secrets-bootstrap.sh`
-  is a one-time-per-session bootstrap convenience, never wired into
-  `openlex_shared.config.Settings` or any runtime code path.
+- **Local kind:** always local Postgres + `.env`-derived `openlex-secrets` (exactly what
+  exists today, via `scripts/kind-secrets-bootstrap.sh`). No changes. No path to real AWS
+  resources, ever — not even an optional one.
+- **Cloud (eks-demo):** always RDS + Secrets Manager + External Secrets Operator (7.1/7.2). No
+  `.env` fallback for cloud.
+- No developer ever needs credentials for *both* at once: local dev only ever needs `.env`;
+  operating the cloud environment (for a project this size, that's the same person who
+  provisions it) already has AWS access by definition.
+- This also fully resolves the "how does local dev reach RDS without exposing it to the
+  internet" question from the original brainstorm — it doesn't need to, because it never
+  reaches it at all. Two complete, independently-correct patterns (env-file-backed local,
+  vault-backed cloud) is a stronger demonstration of real practice than one blurred hybrid.
 
 ```mermaid
 flowchart LR
-    subgraph Local["Local kind (either mode, developer's choice)"]
-        direction TB
+    subgraph Local["Local kind — always local"]
         S1["scripts/kind-secrets-bootstrap.sh<br/>(from local .env)"]
-        S2["scripts/kind-aws-secrets-bootstrap.sh<br/>(from real AWS Secrets Manager,<br/>using your own AWS CLI creds)"]
-        S1 --> SEC["k8s Secret: openlex-secrets<br/>(same name, either path)"]
-        S2 --> SEC
-        SEC -- "envFrom" --> APP["apps/api, apps/worker<br/>(unaware which path populated it)"]
+        S1 --> SEC1["k8s Secret: openlex-secrets"]
+        SEC1 --> APP1["apps/api, apps/worker"]
+        APP1 --> PG[("local Postgres<br/>StatefulSet")]
     end
+
+    subgraph Cloud["eks-demo — always cloud, never mixed"]
+        ESO["External Secrets Operator<br/>(IRSA-authenticated)"] --> SEC2["k8s Secret: openlex-secrets"]
+        SEC2 --> APP2["apps/api, apps/worker"]
+        APP2 --> RDS[("RDS Postgres")]
+    end
+
+    Local -.- X["no connection between them, by design"] -.- Cloud
+
+    style Local fill:#e8f4ea,stroke:#4a7a52
+    style Cloud fill:#f4f0fa,stroke:#5a4a8a
 ```
 
 ## 7.4 — Terraform remote state
@@ -201,14 +211,9 @@ and free (included in RDS pricing up to the allocated storage size).
   `ExternalSecret` changes) against the relevant CRD's actual documented `apiVersion`/`spec`
   shape — cite the specific doc/schema version checked against in the implementation plan's
   task reports, not just "looks right."
-- `scripts/kind-aws-secrets-bootstrap.sh` **can** be tested live against real AWS Secrets
-  Manager without needing EKS/RDS to exist — it only needs a real `openlex/app` secret to
-  read from. If a real AWS Secrets Manager secret is available for testing, this script's
-  actual behavior (idempotent create/update of `openlex-secrets`, matching
-  `kind-secrets-bootstrap.sh`'s exact pattern) should be verified live against the real kind
-  cluster, same as every other bootstrap script in this project's history — this is the one
-  piece of this phase that can be genuinely live-verified without any AWS spend beyond
-  Secrets Manager's near-zero per-secret cost.
+- 7.3 has no new code to test — its "testing" is confirming `scripts/kind-secrets-bootstrap.sh`
+  and every local kind manifest are genuinely untouched by this phase (a diff check, not a
+  functional test).
 
 ## Open questions / risks
 
