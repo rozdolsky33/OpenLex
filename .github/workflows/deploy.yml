@@ -13,6 +13,11 @@ permissions:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-develop
+      cancel-in-progress: false # queue, don't cancel/collide -- primary defense against a
+        # human merge to develop landing mid-run and making the final `git push origin
+        # HEAD:develop` a non-fast-forward rejection.
     env:
       REGISTRY: ghcr.io
       IMAGE_OWNER: ${{ github.repository_owner }}
@@ -62,6 +67,10 @@ jobs:
             openlex-web=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/openlex-web:${{ github.sha }}
 
       - name: Commit and push the tag bump
+        # Pushes with this job's own GITHUB_TOKEN (via checkout@v4's default
+        # persist-credentials: true) do NOT trigger new workflow runs -- this is what stops
+        # this bot commit from re-triggering deploy.yml in an infinite loop. Do not swap this
+        # for a PAT to "make it trigger downstream CI" without addressing that loop risk.
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
