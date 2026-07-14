@@ -21,8 +21,10 @@ manifest form but has never actually run.
 **Explicitly in scope:** RDS Postgres for the eks-demo/production path (7.1), verifying and
 completing the existing Secrets Manager + External Secrets Operator manifests (7.2),
 documenting the deliberate environment isolation between local kind and cloud (7.3), Terraform
-remote state (7.4, closes the old 6.4), and a Postgres backup/DR strategy (7.5, closes the old
-6.5).
+remote state (7.4, closes the old 6.4), a Postgres backup/DR strategy (7.5, closes the old
+6.5), and a cheap, AWS-native cloud observability strategy for `eks-demo` with Grafana as the
+shared viewing layer across both environments (7.6, not in the original roadmap — added during
+this design pass).
 
 **Explicitly out of scope:** actually running `terraform apply` against a real AWS account, or
 any other live AWS deployment/verification — confirmed with the user: this phase produces
@@ -198,6 +200,69 @@ Terraform.
 silently discard the final state). Documented in `infra/terraform/README.md` as the actual DR
 strategy: RDS's own automated daily snapshots, not a custom `pg_dump`-to-S3 pipeline — simpler
 and free (included in RDS pricing up to the allocated storage size).
+
+## 7.6 — Cloud observability: AWS-native managed backends, one shared Grafana
+
+**Problem:** `eks-demo` has zero observability today — no OTel Collector, no Prometheus, no
+Grafana, nothing (`infra/argocd/apps/eks-demo/` has no observability apps at all, confirmed
+by listing the directory). Copying kind's full self-hosted stack (kube-prometheus-stack +
+Tempo + Jaeger + Loki + Promtail + Alertmanager) would need dedicated observability compute —
+kind gives that its own tainted node (`openlex.dev/workload=observability`, see
+`docs/infrastructure/kubernetes-topology.md`); `eks-demo`'s `variables.tf` currently
+provisions exactly **one** node (`node_desired_size = 1`), so there's nowhere to put a full
+stack without growing the cluster specifically to host it.
+
+**Design:** AWS-native managed backends instead of self-hosted, with Grafana staying the one
+shared viewing layer across both environments (the explicit ask: "I do like Grafana as a
+single place for it"):
+
+- **Traces → AWS X-Ray.** The *same* `infra/local-observability/otel-collector-config.yaml`
+  shape already proven in both kind and docker-compose — for `eks-demo`, the collector gains
+  an `awsxray` exporter (IAM-authenticated via IRSA, same pattern as `external-secrets`'s role)
+  instead of `otlp/jaeger`/`otlp/tempo`. No new component category, just a different exporter
+  on infrastructure that already exists as a config pattern. X-Ray's free tier (100k traces/
+  month) comfortably covers demo-scale traffic; ~$5/million after.
+- **Metrics → CloudWatch**, via the same collector's `awsemf` (embedded metric format)
+  exporter — the app's existing Prometheus-format metrics
+  (`openlex_http_requests_total`/`openlex_http_request_duration_seconds` from
+  `apps/api/src/openlex_api/http_metrics.py`, already built in Phase 3) flow through
+  unchanged. No self-hosted Prometheus, no kube-prometheus-stack bundle, no dedicated node.
+- **Logs → CloudWatch Logs**, via EKS's standard logging path (Fluent Bit) — no self-hosted
+  Loki/Promtail.
+- **Grafana → one small self-hosted instance** (just the Grafana chart alone — not the
+  kube-prometheus-stack bundle it currently rides along with on kind), configured with
+  CloudWatch and X-Ray as native Grafana datasources (both are officially supported Grafana
+  datasource types, no plugin gymnastics). This is the one place kind and `eks-demo` stay
+  visually consistent even though their backends differ completely — a developer who knows
+  kind's Grafana already knows `eks-demo`'s.
+
+**Explicitly the future cloud-native improvement path, not built now:** if real traffic or
+cost ever justifies it, AWS Managed Prometheus (AMP) + AWS Managed Grafana (AMG), or a fully
+self-hosted stack matching kind's, are both natural swap-ins later — same Grafana dashboards,
+different datasource wiring underneath. Starting on managed AWS primitives is the cheaper,
+lower-ops-burden default until that's actually needed, not a permanent ceiling.
+
+```mermaid
+flowchart TB
+    subgraph EKS["eks-demo (not yet deployed)"]
+        App["apps/api, apps/worker"] -- OTLP --> Coll["OTel Collector<br/>(same config shape as kind/compose)"]
+        Coll -- awsxray exporter --> XRay[["AWS X-Ray"]]
+        Coll -- awsemf exporter --> CW[["CloudWatch Metrics"]]
+        FluentBit["Fluent Bit<br/>(EKS standard logging)"] --> CWLogs[["CloudWatch Logs"]]
+        Graf["Grafana<br/>(single small instance,<br/>chart only, no bundle)"]
+        Graf -- "CloudWatch datasource" --> CW
+        Graf -- "CloudWatch datasource" --> CWLogs
+        Graf -- "X-Ray datasource" --> XRay
+    end
+
+    style EKS fill:#f4f0fa,stroke:#5a4a8a
+```
+
+**Not yet decided — genuinely open, flag rather than assume:** whether `infra/monitoring/
+grafana/dashboards/**`'s existing PromQL-based dashboard JSON can be reused as-is against
+CloudWatch Metrics Insights (a materially different query language) or need parallel
+CloudWatch-flavored versions. Likely the latter, for at least the panels that matter most
+(Golden Signals) — resolve during implementation, not asserted here as settled.
 
 ## Testing (no live deployment this phase — see "Explicitly out of scope")
 

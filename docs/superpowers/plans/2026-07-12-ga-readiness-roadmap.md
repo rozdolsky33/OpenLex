@@ -364,39 +364,56 @@ here (ECR/EKS is Phase 7 scope; GHCR needed zero AWS dependency for this phase).
 CI/CD essentials without a real-money dependency. Phase 7 is the actual cloud-production path:
 a managed Postgres (replacing the in-cluster StatefulSet, which has no backup/DR story — this
 absorbs the old 6.5), Terraform remote state for the real infra that provisions it (absorbing
-the old 6.4), and AWS Secrets Manager + External Secrets Operator instead of the local
-`.env`-file-to-k8s-Secret bootstrap pattern (`scripts/kind-secrets-bootstrap.sh`) — while
-keeping that local pattern available as an explicit *option*, not replacing it outright, so
-local dev never requires an AWS account.
+the old 6.4), AWS Secrets Manager + External Secrets Operator for the cloud path, and a cheap
+AWS-native observability strategy (7.6, added during design) so `eks-demo` isn't left with
+zero visibility.
 
-Not yet brainstormed/specced as of this writing — planning starts on a fresh branch off `main`
-(see `docs/superpowers/specs/` for the eventual design doc once it exists).
+**Design approved:** `docs/superpowers/specs/2026-07-14-phase7-aws-rds-secrets-manager-design.md`
+(design/build only this pass, no live AWS deployment — confirmed with the user). Implementation
+plan not yet written.
 
-- [ ] **7.1** Design: AWS RDS Postgres (with pgvector) as the production database, replacing
-      the in-cluster StatefulSet for the eventual EKS/production environment
-- [ ] **7.2** Design: AWS Secrets Manager + External Secrets Operator integration for the
-      production/EKS environment, mirroring the shape `infra/kubernetes/overlays/eks-demo`
-      already partially has (IRSA roles for `external-secrets` already exist in
-      `infra/terraform/iam_irsa_external_secrets.tf`) — verify and complete, don't assume
-      it's finished
-- [ ] **7.3** Bootstrap flexibility: extend `scripts/bootstrap.sh`/the kind bootstrap flow with
-      an explicit *option* to point local dev at a real AWS RDS instance + Secrets Manager
-      instead of local Postgres/`.env`-derived secrets, without making that the default or
-      required path
+**Revised during design — local/cloud stay strictly isolated:** the original sketch below
+(7.3) proposed an opt-in hybrid mode letting local kind pull secrets or connect to RDS from
+real AWS. Dropped during design review: letting a developer's laptop reach into a cloud
+database is the anti-pattern real platform teams avoid, not something worth building
+convenience tooling for. Local kind stays 100% local (`.env` + in-cluster Postgres, unchanged,
+zero new code); cloud stays 100% cloud (RDS + Secrets Manager + External Secrets Operator). No
+developer ever needs credentials for both at once. See the spec's 7.3 for the full reasoning.
+
+- [ ] **7.1** RDS Postgres (pgvector) as the production database, replacing the in-cluster
+      StatefulSet — joins the *existing* public subnets (this VPC has no private subnets, no
+      NAT Gateway, deliberately — see `vpc.tf`) with `publicly_accessible=false` + security
+      groups as the real isolation boundary, not new private subnets. Terraform writes the
+      real `DATABASE_URL` directly into the `openlex/app` Secrets Manager secret (closing an
+      existing fully-manual step). Occasional operator access via a throwaway `kubectl` debug
+      pod (EKS is already in the VPC) instead of a bastion/SSM setup.
+- [ ] **7.2** Verify + complete (not rebuild) the existing but never-live-verified Secrets
+      Manager + External Secrets Operator manifests (`ClusterSecretStore`, `ExternalSecret`,
+      IRSA role all already exist in `infra/argocd/apps/eks-demo/` and
+      `infra/terraform/iam_irsa_external_secrets.tf`) for the production/EKS environment
+- [x] **7.3** Environment isolation — resolved as documentation, not new code (see above)
 - [ ] **7.4** Terraform remote state (S3 + DynamoDB lock table) for `infra/terraform/` — the
       old 6.4, now scoped alongside the rest of the real AWS work it was always meant to
       protect
-- [ ] **7.5** Postgres backup/DR strategy — the old 6.5, likely resolved for free once 7.1
-      lands (RDS automated backups/snapshots) rather than needing a hand-rolled `pg_dump`
-      strategy for the in-cluster StatefulSet
+- [ ] **7.5** Postgres backup/DR strategy — the old 6.5, resolved for free via 7.1's RDS
+      automated backups/snapshots rather than a hand-rolled `pg_dump` strategy
+- [ ] **7.6** Cloud observability (added during design, not originally scoped): AWS-native
+      managed backends instead of copying kind's full self-hosted stack — `eks-demo` is
+      currently single-node (`node_desired_size = 1`), with nowhere to put a
+      kube-prometheus-stack-sized footprint without growing the cluster just to host it.
+      X-Ray for traces + CloudWatch for metrics/logs, via the *same* OTel Collector config
+      shape already proven on kind/compose (just different exporters). One small self-hosted
+      Grafana (chart only, not the full bundle) with CloudWatch + X-Ray as datasources stays
+      the single shared viewing layer across kind and eks-demo.
 
 ### Checkpoint: Phase 7
-- [ ] `terraform plan` against the remote backend shows no unexpected drift after migration
-- [ ] A documented (and ideally rehearsed) restore-from-backup procedure exists for the
-      production Postgres
-- [ ] A developer can `scripts/bootstrap.sh` with the AWS option and get a working local stack
-      pointed at real RDS/Secrets Manager, without that being required for anyone who just
-      wants local Postgres/`.env`
+- [ ] `terraform validate`/`terraform plan` clean against the existing local-state backend (no
+      live deployment this phase)
+- [ ] A documented (and ideally rehearsed once actually deployed) restore-from-backup
+      procedure exists for the production Postgres
+- [ ] `scripts/kind-secrets-bootstrap.sh` and every local kind manifest confirmed genuinely
+      untouched by this phase (verifies 7.3's isolation guarantee held in practice, not just
+      in the design doc)
 
 ---
 

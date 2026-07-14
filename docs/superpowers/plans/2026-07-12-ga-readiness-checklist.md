@@ -4,9 +4,10 @@ Flat tracking sheet — check items off as PRs merge. Full reasoning, acceptance
 file-level detail for each item live in
 `docs/superpowers/plans/2026-07-12-ga-readiness-roadmap.md`; this file is just the scoreboard.
 
-**Progress: 36 / 48 items complete (75%)** — update this line by hand as boxes get checked.
+**Progress: 37 / 49 items complete (76%)** — update this line by hand as boxes get checked.
 (Recount 2026-07-14: denominator grew with Phase 6's completion and the addition of Phase 7,
-which absorbed the old 6.4/6.5 plus new AWS RDS/Secrets Manager scope.)
+which absorbed the old 6.4/6.5 plus new AWS RDS/Secrets Manager/cloud-observability scope;
+7.3 closed as "documentation, not new code" during design review.)
 
 ## Phase 0 — Prep
 - [ ] 0.1 Fix `pipelines.yml` to actually run `apps/worker/tests`
@@ -257,17 +258,28 @@ docs commit, all merged to `develop` then promoted to `main` via #31)
       the roadmap doc's Phase 6 "Scope note" for why.
 
 ## Phase 7 — AWS-flavored production path: RDS, Secrets Manager, External Secrets 🔴 blocker
-Not yet brainstormed/specced — see `docs/superpowers/plans/2026-07-12-ga-readiness-roadmap.md`'s
-Phase 7 for the current scope sketch (RDS, Secrets Manager + External Secrets Operator,
-Terraform remote state, Postgres backup/DR, an explicit-opt-in AWS-backed local bootstrap
-option alongside the existing local-only path).
+Design spec approved and committed (`docs/superpowers/specs/
+2026-07-14-phase7-aws-rds-secrets-manager-design.md`) — implementation plan not yet written.
+Design/build only this pass, no live AWS deployment (confirmed with the user).
 - [ ] 7.1 Design + implement: RDS Postgres (pgvector) for production, replacing the in-cluster
-      StatefulSet
-- [ ] 7.2 Design + implement: AWS Secrets Manager + External Secrets Operator for
-      production/EKS
-- [ ] 7.3 Bootstrap flexibility: explicit opt-in AWS-backed option in the local bootstrap flow
+      StatefulSet. Includes a corrected VPC assumption (public-subnets-only, no NAT Gateway —
+      RDS joins existing public subnets with `publicly_accessible=false` + security groups as
+      the real isolation boundary) and a documented `kubectl` debug-pod pattern for occasional
+      operator access instead of a bastion/SSM setup.
+- [ ] 7.2 Verify + complete (not rebuild): the existing but never-live-verified Secrets
+      Manager + External Secrets Operator manifests for production/EKS
+- [x] 7.3 Environment isolation — **resolved as "no new code needed."** Local kind never gains
+      any path to real AWS resources, not even optional (a hybrid bootstrap mode was
+      considered during design and deliberately dropped — see the spec's 7.3). Local stays
+      100% local, cloud stays 100% cloud.
 - [ ] 7.4 Terraform remote state (S3 + DynamoDB) — was 6.4
-- [ ] 7.5 Postgres backup/DR strategy — was 6.5, likely resolved by 7.1's RDS backups
+- [ ] 7.5 Postgres backup/DR strategy — was 6.5, resolved via 7.1's RDS automated backups
+- [ ] 7.6 Cloud observability (added during design, not in the original sketch): AWS-native
+      managed backends (X-Ray for traces, CloudWatch for metrics/logs via the same OTel
+      Collector config already proven on kind/compose) instead of copying kind's full
+      self-hosted stack — cheap, no dedicated observability node needed on eks-demo's
+      currently-single-node cluster. One small self-hosted Grafana stays the shared viewing
+      layer across kind and eks-demo (CloudWatch + X-Ray as Grafana datasources).
 
 ## Sign-off gates (not code — human decisions required before flipping to GA)
 - [ ] Legal counsel has reviewed and approved ToS/privacy text (Phase 4)
