@@ -4,7 +4,9 @@ Flat tracking sheet — check items off as PRs merge. Full reasoning, acceptance
 file-level detail for each item live in
 `docs/superpowers/plans/2026-07-12-ga-readiness-roadmap.md`; this file is just the scoreboard.
 
-**Progress: 20 / 37 items complete (54%)** — update this line by hand as boxes get checked.
+**Progress: 24 / 43 items complete (56%)** — update this line by hand as boxes get checked.
+(Recount 2026-07-14: prior "20/37" had drifted stale — items added during the observability
+work, e.g. 3.12-3.14, were never folded into the denominator.)
 
 ## Phase 0 — Prep
 - [ ] 0.1 Fix `pipelines.yml` to actually run `apps/worker/tests`
@@ -26,7 +28,8 @@ file-level detail for each item live in
 - [x] 2.3 `handle_query_turn` scopes loads by `user_id`; cross-user access returns 404
 - [x] 2.4 Integration test (`tests/integration/test_conversations.py`) covers cross-user denial
 
-## Phase 3 — Production observability 🔴 blocker (superseded by expanded design)
+## Phase 3 — Production observability 🔴 blocker (superseded by expanded design) — ✅ done
+2026-07-14 modulo 3.2 (deliberately deferred, see below — not a silent gap)
 See `docs/superpowers/specs/2026-07-12-production-observability-design.md` (approved) and
 its per-phase implementation plans under `docs/superpowers/plans/2026-07-12-observability-phase*.md`
 and `docs/superpowers/plans/2026-07-13-observability-phase2-tracing-and-ha.md`.
@@ -65,9 +68,34 @@ and `docs/superpowers/plans/2026-07-13-observability-phase2-tracing-and-ha.md`.
       show real non-zero data, not just that the exporter process runs). One real secret leak
       was caught and fixed during this work: the NY Open Legislation API key was appearing in
       cleartext in httpx span attributes; now redacted.
-- [ ] 3.10 Observability Phase 4: `apps/web` browser tracing
-- [ ] 3.11 Alertmanager symptom-based alert rules (error rate, p99 latency, quota burn) — Loki
-      itself is done (3.7c), this item is specifically the alerting rules, still open
+- [x] 3.10 Observability Phase 4: `apps/web` browser tracing (2026-07-14, PR #24, merged) —
+      Web SDK (`WebTracerProvider` + `BatchSpanProcessor` + OTLP/HTTP exporter,
+      `StackContextManager`) wired in `apps/web/src/telemetry.ts`, root span per page load
+      (`DocumentLoadInstrumentation`) + child span per `fetch()` call
+      (`FetchInstrumentation`, `traceparent` propagated only to `VITE_API_BASE_URL`), gated
+      on `VITE_OTLP_ENDPOINT` (unset = tracing silently skipped, matches the project's
+      no-hardcoded-endpoint precedent). Collector's `otlp.protocols.http.cors` allowlist
+      added for the dev-server origin. Live-verified end-to-end post-merge: real OTLP/HTTP
+      exports succeed (200, with a preceding successful CORS preflight) from the browser;
+      pulled a real trace (`542e10969289408618a70929f6edb03`) from Tempo rooted at
+      `openlex-web: HTTP POST` correctly chaining into the full `apps/api` server-side
+      waterfall (DB spans, `anthropic.messages.create`), proving genuine cross-service trace
+      propagation, not just isolated browser spans. **Finding, not fixed in this pass:**
+      `X-Trace-Id` response header isn't exposed via CORS (`Access-Control-Expose-Headers`
+      missing from `apps/api`'s CORS middleware config), so browser JS reading it via
+      `fetch()` gets `null` — a real but minor gap, doesn't block anything since Tempo/Jaeger
+      lookup by trace ID still works without it.
+- [x] 3.11 Alertmanager symptom-based alert rules (2026-07-14, PR #23, merged) — Loki itself
+      was already done (3.7c); this item is specifically the alerting rules. 5 symptom-based
+      rules added via `kube-prometheus-stack`'s `additionalPrometheusRulesMap` (carries the
+      chart's release label automatically, required for `ruleSelectorNilUsesHelmValues: true`
+      to pick it up): `HighErrorRate` (>5%/5m, `for: 2m`, page), `ElevatedErrorRate`
+      (>1%/15m, `for: 15m`, ticket), `QueryLatencyP99High` (p99>6s, `for: 10m`, ticket),
+      `QuotaBurnRate` (>5 quota-exceeded events/15m per tier, ticket),
+      `PostgresConnectionSaturation` (>80% of `max_connections`, `for: 5m`, ticket). Chart's
+      default Alertmanager route still sends everything to a `"null"` receiver by design — no
+      paging integration exists yet; this item was scoped to the rules themselves, not
+      notification delivery.
 - [x] 3.12 Observability revisit (2026-07-13): closed the Golden Signals metrics gap flagged in
       3.8/3.9's notes — `apps/api/src/openlex_api/http_metrics.py` adds a hand-rolled
       `prometheus_client` RED middleware (`openlex_http_requests_total` +
@@ -117,7 +145,8 @@ and `docs/superpowers/plans/2026-07-13-observability-phase2-tracing-and-ha.md`.
       re-verified. **3.10 (browser tracing) and 3.11 (Alertmanager symptom-based rules) remain
       open** — explicitly out of scope for this pass, tracked as-is, not touched or narrowed by
       it. The On-Call dashboard's `dashboard_url` alert-annotation wiring is a small follow-on
-      once 3.11 lands, not a blocker for the dashboard's existence.
+      once 3.11 lands, not a blocker for the dashboard's existence. (Both closed 2026-07-14 —
+      see 3.10/3.11 above.)
 - [x] 3.14 Post-3.13 hardening (2026-07-14, PRs #19–#22, all merged) — four follow-up fixes
       found via live use of the 3.13 dashboards, not part of that pass's original scope:
       - **#19** Tempo's Grafana datasource had empty `jsonData` — the Service Graph panel had
@@ -146,7 +175,8 @@ and `docs/superpowers/plans/2026-07-13-observability-phase2-tracing-and-ha.md`.
         is fixed for a container's lifetime). Verified live: a real trace's resource
         attributes show the exact pod/node that served the request.
       **3.10 and 3.11 remain open and untouched by any of this** — none of #19–#22 add browser
-      tracing or alerting rules; they're fixes to what 3.13 already shipped.
+      tracing or alerting rules; they're fixes to what 3.13 already shipped. (Both closed
+      2026-07-14 — see 3.10/3.11 above.)
 
 ## Phase 4 — Legal/compliance content 🔴 blocker
 - [ ] 4.1 ToS/Privacy route + page live in `apps/web`, linked from auth screens
