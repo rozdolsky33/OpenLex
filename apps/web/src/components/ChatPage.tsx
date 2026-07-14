@@ -188,6 +188,9 @@ export function ChatPage() {
               New chat
             </button>
           )}
+          <a href="/legal" className="text-xs text-slate-500 underline">
+            Privacy &amp; Terms
+          </a>
           <button type="button" onClick={logout} className="text-xs text-slate-500 underline">
             Log out
           </button>
