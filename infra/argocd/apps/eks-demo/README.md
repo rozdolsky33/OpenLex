@@ -1,9 +1,9 @@
 # infra/argocd/apps/eks-demo/README.md
 
 Verification notes for the Secrets Manager + External Secrets Operator chain (`secretstore-aws.yaml`,
-`../../kubernetes/overlays/eks-demo/externalsecret-openlex.yaml`,
+`../../../kubernetes/overlays/eks-demo/externalsecret-openlex.yaml`,
 `argocd-admin-externalsecret.yaml`, `app-external-secrets.yaml`,
-`../../terraform/iam_irsa_external_secrets.tf`) — see
+`../../../terraform/iam_irsa_external_secrets.tf`) — see
 `docs/superpowers/specs/2026-07-14-phase7-aws-rds-secrets-manager-design.md`'s 7.2. None of
 this has ever run against a real cluster; this is a manual schema/consistency review, not a
 live test.

@@ -39,6 +39,10 @@ Local `kind` needs none of this — it's local-only, no AWS involved.
    `infra/argocd/apps/eks-demo/argocd-admin-externalsecret.yaml` for the exact shape expected.
 6. `aws eks update-kubeconfig --name <cluster_name> --region <region>`, then run
    `scripts/argocd-bootstrap.sh eks-demo`.
+7. `kubectl patch storageclass gp2 -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'` —
+   EKS ships `gp2` as the cluster's default StorageClass out of the box; this repo's `gp3`
+   StorageClass (`infra/kubernetes/overlays/eks-demo/storageclass-gp3.yaml`) needs to be the
+   *only* default so PVCs without an explicit `storageClassName` bind correctly.
 
 ## State
 

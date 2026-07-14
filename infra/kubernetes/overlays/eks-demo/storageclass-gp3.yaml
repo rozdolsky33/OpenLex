@@ -8,6 +8,17 @@
 # gets from its own default `standard` StorageClass. Cluster-scoped -- kustomize's
 # `namespace: openlex` transformer (this overlay's global setting) only affects namespaced
 # resources, so it's safe to include here.
+#
+# COLLISION: EKS ships the built-in in-tree "gp2" StorageClass already marked as the cluster
+# default (storageclass.kubernetes.io/is-default-class: "true"), and nothing in this repo
+# unmarks it. With both "gp2" and "gp3" marked default, a PVC without an explicit
+# storageClassName (e.g. Phase 7b's Tempo/Loki PVCs) binds non-deterministically. This can't be
+# fixed via Kustomize/GitOps here -- redefining "gp2"'s exact spec risks drifting from whatever
+# EKS actually ships for a given cluster version -- so it's a documented one-time imperative
+# step instead (same category as this repo's other manual steps: see
+# infra/terraform/README.md's "First-time setup" list). Run once per cluster, after
+# `aws eks update-kubeconfig`:
+#   kubectl patch storageclass gp2 -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:

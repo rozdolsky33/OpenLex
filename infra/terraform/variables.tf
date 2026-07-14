@@ -44,7 +44,7 @@ variable "secrets_manager_path_prefix" {
 }
 
 variable "db_instance_class" {
-  description = "RDS instance class -- Graviton, matches this repo's cost-conscious node-type precedent"
+  description = "RDS instance class — Graviton, matches this repo's cost-conscious node-type precedent"
   type        = string
   default     = "db.t4g.micro"
 }
@@ -62,13 +62,13 @@ variable "db_backup_retention_days" {
 }
 
 variable "db_name" {
-  description = "Database name inside the RDS instance -- matches local dev's docker-compose convention"
+  description = "Database name inside the RDS instance — matches local dev's docker-compose convention"
   type        = string
   default     = "openlex"
 }
 
 variable "db_username" {
-  description = "Master username for the RDS instance -- matches local dev's docker-compose convention"
+  description = "Master username for the RDS instance — matches local dev's docker-compose convention"
   type        = string
   default     = "openlex"
 }
