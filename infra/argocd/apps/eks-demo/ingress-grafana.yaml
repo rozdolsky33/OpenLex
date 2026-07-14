@@ -1,0 +1,43 @@
+# infra/argocd/apps/eks-demo/ingress-grafana.yaml
+#
+# nginx.ingress.kubernetes.io/auth-url + auth-signin gate access via oauth2-proxy
+# (app-oauth2-proxy.yaml) -- the standard, documented ingress-nginx + oauth2-proxy
+# integration pattern. Targets kube-prometheus-stack-grafana (Task 3's bundled Grafana, not a
+# standalone chart). Lives here, not infra/kubernetes/overlays/eks-demo/, for the same
+# namespace-transformer reason as externalsecret-oauth2-proxy.yaml above. Replace <DOMAIN>
+# with the real demo domain.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana
+  namespace: observability
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/auth-url: "https://grafana.<DOMAIN>/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-signin: "https://grafana.<DOMAIN>/oauth2/start?rd=$scheme://$host$request_uri"
+    nginx.ingress.kubernetes.io/auth-response-headers: "X-Auth-Request-User, X-Auth-Request-Email"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - grafana.<DOMAIN>
+      secretName: grafana-tls
+  rules:
+    - host: grafana.<DOMAIN>
+      http:
+        paths:
+          - path: /oauth2
+            pathType: Prefix
+            backend:
+              service:
+                name: oauth2-proxy
+                port:
+                  number: 4180
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kube-prometheus-stack-grafana
+                port:
+                  number: 80

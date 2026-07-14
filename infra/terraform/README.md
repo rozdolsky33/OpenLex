@@ -37,6 +37,10 @@ Local `kind` needs none of this — it's local-only, no AWS involved.
    ```
    Separately, create `openlex/argocd-admin` by hand (unchanged) — see
    `infra/argocd/apps/eks-demo/argocd-admin-externalsecret.yaml` for the exact shape expected.
+
+   Also create `openlex/oauth2-proxy` (JSON keys `client_id`, `client_secret`, `cookie_secret`)
+   after registering a GitHub OAuth App (see
+   `infra/argocd/apps/eks-demo/app-oauth2-proxy.yaml`'s header comment for the exact steps).
 6. `aws eks update-kubeconfig --name <cluster_name> --region <region>`, then run
    `scripts/argocd-bootstrap.sh eks-demo`.
 7. `kubectl patch storageclass gp2 -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'` —
