@@ -4,10 +4,22 @@
 # eks-demo Application. This chart (grafana/tempo, not grafana/tempo-distributed) is
 # single-binary by design ("Grafana Tempo Single Binary Mode" per its own chart
 # description) — no config is needed to select that mode; it's the only mode this chart
-# offers. Local filesystem storage (the chart default, backed by an emptyDir when
-# `persistence.enabled` is left at its default `false`) — this is a comparison-and-learning
-# setup on kind (see the design doc), not a production-shaped deployment with S3/GCS-backed
-# storage or a PersistentVolumeClaim.
+# offers. Local filesystem storage under a dedicated PersistentVolumeClaim (`persistence.
+# enabled: true` below) rather than the chart's default emptyDir — this is still a
+# comparison-and-learning setup on kind (see the design doc), not a production-shaped
+# deployment with S3/GCS-backed object storage, but an emptyDir shares the node's root
+# filesystem with every other pod on it and does not survive a pod restart. Confirmed live:
+# with the chart default, Tempo silently lost all ingested trace data on every pod restart
+# during this project's own observability work, and repeated `"failed to cut traces...
+# no space left on device"` errors once the shared node disk filled up from unrelated
+# activity (image builds, other pods) -- switching to a PVC doesn't grow the underlying node
+# disk (kind's default `rancher.io/local-path` provisioner doesn't enforce the `size` request
+# as a hard quota, it just creates a directory on the node), but it does give Tempo durable
+# storage across restarts and a named, capped, monitorable volume instead of silently
+# competing with everything else for the node's root filesystem -- same reasoning `loki`
+# (`infra/monitoring/loki/values-base.yaml`) already uses `singleBinary.persistence.enabled:
+# true` for, and the same `size: 10Gi` convention, no `storageClassName` override needed since
+# kind's default `standard` StorageClass (`rancher.io/local-path`) binds automatically.
 #
 # Verified against `helm show values grafana/tempo --version 1.24.*` (resolved to chart
 # 1.24.4, appVersion 2.9.0) — this pinned version's schema differs materially from the task
@@ -29,6 +41,10 @@
 # `helm show chart` confirms `deprecated: true` upstream. Re-evaluate `grafana/tempo-
 # distributed` or whatever the current Grafana-recommended Tempo deployment path is before
 # hardening this beyond kind (see the design doc's kind/eks-demo consistency section).
+
+persistence:
+  enabled: true
+  size: 10Gi
 
 tempo:
   memBallastSizeMbs: 128
