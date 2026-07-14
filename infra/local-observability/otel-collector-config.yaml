@@ -1,0 +1,29 @@
+# infra/local-observability/otel-collector-config.yaml
+#
+# Docker-compose's lightweight observability subset -- mirrors
+# infra/monitoring/otel-collector/values-base.yaml's receive-and-export shape, minus the
+# metrics/logs debug-only pipelines (compose has no Prometheus remote-write or Loki target to
+# send those to; traces are the one signal worth exporting locally).
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/jaeger]
