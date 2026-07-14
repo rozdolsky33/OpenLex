@@ -41,16 +41,33 @@ fused AS (
         SELECT chunk_id, rank FROM fts_ranked
     ) combined
     GROUP BY chunk_id
+),
+-- Keep only each document's single best-scoring chunk before ranking for the final top_k.
+-- Without this, a long multi-chunk document (case law can run to dozens of chunks) can place
+-- several of its own chunks in the top results, crowding out other relevant documents --
+-- observed directly against the real corpus: a single case occupied 4 of 8 top-k slots for a
+-- generic query, pushing out the actually-relevant statute section entirely. One document can
+-- still only contribute one citation to a single hybrid_search call; if it's genuinely the
+-- best source, generate_answer's own multi-turn/reformulation flow can surface more of it on
+-- a follow-up question.
+best_chunk_per_document AS (
+    SELECT f.chunk_id, f.score,
+           row_number() OVER (
+               PARTITION BY c.document_id ORDER BY f.score DESC, f.chunk_id
+           ) AS doc_rank
+    FROM fused f
+    JOIN chunks c ON c.id = f.chunk_id
 )
 SELECT c.id AS chunk_id, c.document_id, c.text,
        d.citation, d.doc_type, d.title, d.court, d.effective_date, d.url,
-       f.score
-FROM fused f
-JOIN chunks c ON c.id = f.chunk_id
+       b.score
+FROM best_chunk_per_document b
+JOIN chunks c ON c.id = b.chunk_id
 JOIN documents d ON d.id = c.document_id
+WHERE b.doc_rank = 1
 -- deterministic tie-break on chunk id: repeated identical queries must return a stable
 -- order, or golden-question eval runs aren't reproducible.
-ORDER BY f.score DESC, c.id
+ORDER BY b.score DESC, c.id
 LIMIT :top_k
 """
 

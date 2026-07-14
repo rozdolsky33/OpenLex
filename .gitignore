@@ -16,6 +16,7 @@ htmlcov/
 pgdata/
 requirements.audit.txt
 .idea/
+eval-results.json
 
 # Claude Code harness artifacts (not project files)
 .agents/

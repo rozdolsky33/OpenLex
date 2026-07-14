@@ -13,8 +13,31 @@
 #   notes               why this question/citation pairing was chosen (cite the statute
 #                       language, not just the section title).
 #
-# Covers every section in seed_statutes.json at least once, plus two out-of-scope questions to
-# regression-test the hard-abstain path.
+# The original 18-section seed set is covered exhaustively below, plus two out-of-scope
+# questions to regression-test the hard-abstain path. The 2026-07-14 corpus expansion (18->64
+# statute sections, 3->5 cases, see CLAUDE.md's scope-philosophy note and
+# docs/superpowers/plans/2026-07-12-ga-readiness-roadmap.md's Phase 5) added a representative
+# sample covering the highest-value new sections, not exhaustive coverage of all 46 new
+# sections -- this project's scope is "credible," not "complete."
+#
+# KNOWN LIMITATION (found 2026-07-14, not fully resolved): re-running this suite after the
+# corpus expansion surfaced a real retrieval-recall regression on 6 questions (5 hard-abstain,
+# 1 imprecise-citation) -- tripling the statute count and adding a near-duplicate procedural
+# article (RPAPL Article 7-A mirrors Article 7's jurisdiction/grounds/commencement/judgment
+# structure almost 1:1) created enough lexical/semantic competition that some short, generic
+# statute sections (e.g. RPAPL SS701 "Jurisdiction; courts; venue") fall out of hybrid_search's
+# top_k=8 entirely, even though they're still the best answer. Root-caused via direct
+# hybrid_search/RRF inspection against the real corpus (not guessed): one confirmed
+# contributing structural bug -- a single multi-chunk document could occupy several top_k
+# slots -- was found and fixed (see legal_retrieval/search.py's per-document dedup and
+# tests/integration/test_search.py::test_hybrid_search_caps_one_chunk_per_document), but it
+# didn't fully close these specific gaps. Deeper fixes (query expansion, embedding
+# re-weighting, section-title boosting) are real ML/retrieval-engineering work disproportionate
+# to this project's scope (see CLAUDE.md: SRE/platform depth over legal-content completeness)
+# -- tracked here as a known, honestly-reported gap rather than silently masked by loosening
+# assertions. Affected: notice-before-nonpayment-proceeding, jurisdiction-and-venue,
+# warrant-of-eviction, stay-in-dwelling-premises, security-deposit-waiver,
+# hp-proceeding-repair-enforcement.
 
 questions:
   - id: notice-before-nonpayment-proceeding
@@ -111,13 +134,67 @@ questions:
 
   - id: warranty-of-habitability
     question: "Does New York law guarantee that a rented home is fit for human habitation?"
-    expected_citations: ["RPL § 235-B"]
-    notes: "RPL § 235-B is the implied warranty of habitability."
+    expected_citations: ["RPL § 235-B", "47 N.Y.2d 316"]
+    notes: >
+      RPL § 235-B is the implied warranty of habitability. Since the 2026-07-14 corpus
+      expansion added Park West Management Corp. v. Mitchell (47 N.Y.2d 316) -- the
+      controlling case establishing this exact doctrine -- the system now sometimes answers
+      by citing the case instead of (or alongside) the statute. Both are correct authorities
+      for this question; broadened from statute-only after the expansion made this a real,
+      not hypothetical, alternate-correct-answer case.
 
   - id: unconscionable-lease-clause
     question: "Can a New York court refuse to enforce an unconscionable clause in a residential lease?"
     expected_citations: ["RPL § 235-C"]
     notes: "RPL § 235-C covers unconscionable leases or lease clauses."
+
+  - id: good-cause-eviction-grounds
+    question: "Under New York's Good Cause Eviction law, can my landlord refuse to renew my lease or evict me without a specific legal reason?"
+    expected_citations: ["RPL § 215", "RPL § 216"]
+    notes: >
+      § 215 states the general prohibition ("no landlord shall... remove any tenant... except
+      for good cause as defined in section two hundred sixteen"); § 216 lists the actual
+      grounds. Both are correct answers to this question -- OR-matched.
+
+  - id: unlawful-eviction-illegal-lockout
+    question: "Can my landlord legally change the locks or shut off my utilities to force me out without going to court first?"
+    expected_citations: ["RPAPL § 768"]
+    notes: "§ 768(1)(a) makes it unlawful to evict an occupant of 30+ days except via a court warrant/order."
+
+  - id: manner-of-service-petition
+    question: "What methods can a landlord use to legally deliver the notice of petition and petition documents to a tenant in an eviction case?"
+    expected_citations: ["RPAPL § 735"]
+    notes: >
+      § 735 covers the specific *methods* of service (personal delivery, suitable-age-and-
+      discretion delivery, conspicuous-place service) -- distinct from the already-seeded
+      § 731 ("Commencement; notice of petition"), which covers timing/commencement, not
+      delivery method.
+
+  - id: rent-increase-non-renewal-notice
+    question: "How much advance written notice must a landlord give before raising a tenant's rent by 5% or more, or before deciding not to renew a lease?"
+    expected_citations: ["RPL § 226-C"]
+    notes: "§ 226-c(1)(a) requires written notice when a rent increase is >=5% or the tenancy won't be renewed."
+
+  - id: terminate-month-to-month-tenancy
+    question: "What notice must a landlord give to end a month-to-month tenancy in New York City?"
+    expected_citations: ["RPL § 232-A"]
+    notes: "§ 232-a is titled 'Notice to terminate monthly tenancy... in the city of New York'."
+
+  - id: hp-proceeding-repair-enforcement
+    question: "If a landlord refuses to fix serious repair problems in a New York City apartment, can tenants or the city force a repair order through housing court?"
+    expected_citations: ["RPAPL § 770"]
+    notes: >
+      § 770 (Article 7-A) lets one-third or more of a building's tenants, or the NYC housing
+      code enforcement commissioner, maintain this special proceeding.
+
+  - id: cure-notice-before-lease-violation-holdover
+    question: "Before starting a holdover eviction proceeding against a rent-stabilized tenant for violating a lease term, is the landlord required to give the tenant a chance to fix the violation first?"
+    expected_citations: ["2 N.Y.3d 472", "51 N.Y.2d 786"]
+    notes: >
+      Tests case-law retrieval specifically (not just statute retrieval): both new cases hold
+      a landlord must give the tenant a 10-day written notice to cure before proceeding --
+      ATM One v. Landaverde (rent-stabilized/ETPR occupancy violation) and Chinatown
+      Apartments v. Chu Cho Lam (lease-covenant breach) are both correct, OR-matched.
 
   - id: unrelated-traffic-law
     question: "What is the maximum speed limit on a New York state highway?"
