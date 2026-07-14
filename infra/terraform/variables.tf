@@ -72,3 +72,9 @@ variable "db_username" {
   type        = string
   default     = "openlex"
 }
+
+variable "github_repository" {
+  description = "GitHub \"owner/repo\" this project lives in — scopes the GitHub Actions OIDC trust policy"
+  type        = string
+  default     = "rozdolsky33/OpenLex"
+}
