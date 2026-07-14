@@ -5,19 +5,21 @@
 **Goal:** Build (not deploy) the complete Terraform + Kubernetes/ArgoCD infrastructure-as-code
 for `eks-demo`'s real cloud-production path — RDS Postgres, verified Secrets Manager/External
 Secrets Operator wiring, a two-node-group topology mirroring kind's observability/apps
-separation, AWS-native observability (X-Ray/CloudWatch/Grafana), S3+CloudFront static hosting
-for `apps/web`, ingress + oauth2-proxy auth for Grafana, and Terraform remote state — all
-`terraform validate`-clean and ready to deploy, with zero live AWS deployment in this phase.
+separation, that same self-hosted observability stack (kube-prometheus-stack + Tempo + Jaeger
++ Loki + Promtail) running for real on it, S3+CloudFront static hosting for `apps/web`,
+ingress + oauth2-proxy auth for Grafana (Prometheus/Jaeger stay port-forward-only), and
+Terraform remote state — all `terraform validate`-clean and ready to deploy, with zero live AWS
+deployment in this phase.
 
 **Architecture:** Extends the existing (never-deployed) `infra/terraform/` + `infra/argocd/` +
 `infra/kubernetes/overlays/eks-demo/` scaffolding in place — no new top-level directories.
 Every new Terraform resource follows the file-per-concern convention already established there
 (`ecr.tf`, `iam_irsa_external_dns.tf`, etc.); every new ArgoCD Application follows the
-sync-wave + IRSA-pinned-ServiceAccount pattern already used by `external-dns`/
-`external-secrets`; every new observability component reuses kind's exact
-`openlex.dev/workload` taint/label/toleration strings so the two environments stay
-structurally comparable even though `eks-demo`'s backends (X-Ray/CloudWatch) differ completely
-from kind's self-hosted stack (Tempo/Jaeger/Loki/Prometheus).
+sync-wave pattern already used by `external-dns`/`external-secrets`, and every observability
+Application is a near-literal copy of its `infra/argocd/apps/kind/` counterpart — same chart,
+same shared `infra/monitoring/*/values-base.yaml` file, same `openlex.dev/workload`
+taint/label/toleration strings — because `eks-demo` runs the *same* observability stack as
+kind, just on real multi-AZ, EBS-backed compute instead of kind's single shared Docker daemon.
 
 **Tech Stack:** Terraform ~>1.5 (AWS provider ~>5.0, plus new `random`/`tls` providers),
 `terraform-aws-modules/eks/aws` ~>20.0, ArgoCD Application CRDs (Helm-chart sources), External
@@ -44,9 +46,16 @@ Secrets Operator `v1beta1`, Kustomize overlays, GitHub Actions with OIDC federat
   explicitly diffs `main...HEAD` against these paths and must show zero changes.
 - **`ArgoCD` does not get `oauth2-proxy` in front of it** — it keeps its own existing native
   login (`argocd-admin-externalsecret.yaml`, unchanged). Only Grafana gets the oauth2-proxy
-  gate in this phase (see Task 9's note on resolving a spec-text ambiguity about
-  Prometheus/Jaeger, which no longer exist as self-hosted `eks-demo` services under 7.6's
-  AWS-native design).
+  gate in this phase; Prometheus and Jaeger (no built-in auth) get **no Ingress at all**, only
+  a port-forward script (Task 10).
+- **Every eks-demo observability Application mirrors its kind counterpart** (same chart
+  version, same shared `infra/monitoring/*/values-base.yaml` file via the `$values` multi-source
+  reference) — the only intentional differences are `project: openlex-eks-demo` (not
+  `openlex-kind`), the values-repo source's `targetRevision: main` (not `develop` — `eks-demo`
+  tracks `main`, `develop` is kind/dev-only, see `docs/infrastructure/
+  dev-workflow-and-branching.md`), and `postgres-exporter`'s DSN (RDS, not the in-cluster
+  Service). No AWS-native exporters (X-Ray/CloudWatch/Fluent Bit) are built this phase — see
+  the design spec's 7.6 "Future enhancement" note.
 - **CloudFront's ACM certificate must use a `us-east-1` provider alias** regardless of
   `var.region`'s value.
 - Every new IRSA `ServiceAccount` name is pinned explicitly in the consuming Application's Helm
@@ -58,27 +67,27 @@ Secrets Operator `v1beta1`, Kustomize overlays, GitHub Actions with OIDC federat
 
 ---
 
-## Note on resolving a real spec ambiguity (7.9)
+## Note on the 7.6/7.9 revision (self-hosted, not AWS-native)
 
-The spec's 7.9 section says "Grafana/Prometheus/Jaeger need real exposure" and "Prometheus and
-Jaeger have no built-in authentication." But 7.6 (added earlier in the same design pass, then
-apparently not fully cross-checked against 7.9's later addition) deliberately drops self-hosted
-Prometheus and Jaeger from `eks-demo` entirely — metrics go to CloudWatch, traces go to X-Ray,
-both are AWS Console/IAM-gated, not Kubernetes Services with something to put an Ingress in
-front of. There is nothing named "Prometheus" or "Jaeger" running on `eks-demo` for Task 9 to
-expose. This plan resolves the inconsistency by scoping 7.9's ingress + oauth2-proxy gate to
-**Grafana only** — the one self-hosted UI `eks-demo` actually has per 7.6 — and treats
-CloudWatch/X-Ray as accessed directly via the AWS Console (IAM-gated, no Ingress needed, no
-gap left unaddressed).
+This plan was originally written against a 7.6/7.9 design built on AWS-native observability
+(X-Ray/CloudWatch/a standalone Grafana with oauth2-proxy in front of Grafana+Prometheus+Jaeger).
+That design was reversed after direct feedback, before any task in this plan was executed: the
+design spec's 7.6 and 7.9 sections were revised in place (see their own "Revised" headers) to
+mirror kind's self-hosted stack (kube-prometheus-stack + Tempo + Jaeger + Loki + Promtail)
+instead, with AWS-native observability moved to a documented future-enhancement note. Tasks
+6-10 below implement the revised design directly — there is no earlier AWS-native version of
+these tasks to reconcile against; this is simply what Tasks 6-10 are. Two practical
+consequences worth stating up front:
 
-## Note on a minor spec correction (7.6)
-
-7.6 describes CloudWatch and X-Ray as "both officially supported Grafana datasource types, no
-plugin gymnastics." CloudWatch is a Grafana **core** built-in datasource (true, no plugin
-needed). X-Ray is a real, Grafana-Labs-catalog-listed datasource, but it does require
-installing the `grafana-x-ray-datasource` plugin via the chart's `plugins:` values list — not
-"zero plugin gymnastics," but also not a hacky workaround. Task 8 does the plugin install
-explicitly and notes this correction inline.
+- **No new IAM/IRSA roles are needed for observability at all.** Every self-hosted component
+  (OTel Collector, Tempo, Jaeger, Loki, Promtail, kube-prometheus-stack, postgres-exporter)
+  talks only to other in-cluster Services or (for postgres-exporter) RDS over the network via
+  the security group Task 1 already opens — none of them call an AWS API. This is a real
+  simplification relative to the original AWS-native design, not an oversight.
+- **Grafana dashboards need no CloudWatch-flavored parallel versions.** Because `eks-demo` now
+  queries the same Prometheus/Tempo/Jaeger/Loki backends kind does, the existing PromQL/LogQL/
+  TraceQL dashboard JSON under `infra/monitoring/grafana/dashboards/` works unchanged — this
+  also resolves the open question the original 7.6 draft flagged and never answered.
 
 ---
 
@@ -94,31 +103,35 @@ New/modified files, grouped by task:
 - **Task 3:** `infra/argocd/apps/eks-demo/README.md` (new)
 - **Task 4:** `infra/terraform/eks.tf`, `infra/terraform/variables.tf` (modified),
   `infra/terraform/iam_irsa_ebs_csi.tf` (new)
-- **Task 5:** `infra/kubernetes/overlays/eks-demo/{patch-resources.yaml,pdb-openlex-api.yaml}`
-  (new), `infra/kubernetes/overlays/eks-demo/kustomization.yaml` (modified)
-- **Task 6:** `infra/argocd/apps/eks-demo/app-otel-collector.yaml` (new),
-  `infra/terraform/iam_irsa_otel_collector.tf` (new),
-  `infra/terraform/outputs.tf`, `infra/terraform/README.md`,
+- **Task 5:** `infra/kubernetes/overlays/eks-demo/{patch-resources.yaml,pdb-openlex-api.yaml,
+  storageclass-gp3.yaml}` (new), `infra/kubernetes/overlays/eks-demo/kustomization.yaml`
+  (modified)
+- **Task 6:** `infra/argocd/apps/eks-demo/{app-otel-collector.yaml,app-tempo.yaml,
+  app-jaeger.yaml}` (new), `infra/argocd/projects/appproject-eks-demo.yaml` (modified)
+- **Task 7:** `infra/argocd/apps/eks-demo/{app-loki.yaml,app-promtail.yaml}` (new — no new
+  `sourceRepos` entry, `grafana.github.io/helm-charts` already added by Task 6)
+- **Task 8:** `infra/argocd/apps/eks-demo/{app-kube-prometheus-stack.yaml,
+  app-observability-dashboards.yaml}` (new),
   `infra/argocd/projects/appproject-eks-demo.yaml` (modified)
-- **Task 7:** `infra/argocd/apps/eks-demo/app-fluent-bit.yaml` (new),
-  `infra/terraform/iam_irsa_fluent_bit.tf` (new), `infra/terraform/outputs.tf`,
-  `infra/terraform/README.md`, `infra/argocd/projects/appproject-eks-demo.yaml` (modified)
-- **Task 8:** `infra/argocd/apps/eks-demo/app-grafana.yaml` (new),
-  `infra/kubernetes/overlays/eks-demo/storageclass-gp3.yaml` (new),
-  `infra/terraform/iam_irsa_grafana.tf` (new), `infra/terraform/outputs.tf`,
-  `infra/terraform/README.md`, `infra/kubernetes/overlays/eks-demo/kustomization.yaml`,
-  `infra/argocd/projects/appproject-eks-demo.yaml` (modified)
-- **Task 9:** `infra/argocd/apps/eks-demo/{app-oauth2-proxy.yaml,
+- **Task 9:** `infra/argocd/apps/eks-demo/app-postgres-exporter.yaml` (new)
+- **Task 10:** `infra/argocd/apps/eks-demo/{app-oauth2-proxy.yaml,
   externalsecret-oauth2-proxy.yaml,ingress-grafana.yaml}` (new),
+  `scripts/eks-demo-observability-port-forward.sh` (new),
   `infra/argocd/projects/appproject-eks-demo.yaml`, `infra/terraform/README.md` (modified)
-- **Task 10:** `infra/terraform/static-site.tf` (new),
+- **Task 11:** `infra/terraform/static-site.tf` (new),
   `infra/terraform/iam_oidc_github_actions.tf` (new), `infra/terraform/providers.tf`,
   `infra/terraform/versions.tf`, `infra/terraform/variables.tf`, `infra/terraform/outputs.tf`,
   `infra/kubernetes/overlays/eks-demo/ingress-api.yaml` (all modified)
-- **Task 11:** `.github/workflows/deploy-static.yml` (new), `infra/terraform/README.md`
+- **Task 12:** `.github/workflows/deploy-static.yml` (new), `infra/terraform/README.md`
   (modified)
-- **Task 12:** `infra/terraform/backend.tf`, `infra/terraform/backend.hcl.example` (new),
+- **Task 13:** `infra/terraform/backend.tf`, `infra/terraform/backend.hcl.example` (new),
   `infra/terraform/README.md`, `.gitignore` (modified)
+
+Note: `infra/kubernetes/overlays/eks-demo/storageclass-gp3.yaml` (the `gp3` `StorageClass`
+Tempo/Loki's PVCs rely on via the default-class annotation) moves to **Task 5** now — it's a
+plain Kubernetes overlay resource, so it belongs with that task's other new K8s YAML and
+`kustomization.yaml` edit, not bundled into an observability Application task. Task 6 (Tempo)
+and Task 7 (Loki) both need it to already exist.
 
 ---
 
@@ -136,9 +149,10 @@ New/modified files, grouped by task:
   (`infra/terraform/variables.tf`, exist today).
 - Produces: `aws_db_instance.openlex` (address used by Task 2's migration Job via the secret
   below, not referenced directly by any other `.tf` file), `aws_secretsmanager_secret.app`
-  (name `openlex/app` — Task 2/3/6/7/8's `dataFrom.extract`/`ExternalSecret` references already
-  depend on this name existing, which it already does implicitly via the AWS side; no other
-  `.tf` file references this resource by name).
+  (name `openlex/app` — Task 3's `dataFrom.extract` review and Task 9's `postgres-exporter`
+  both depend on this name and its `DATABASE_URL`/`POSTGRES_EXPORTER_DSN` keys existing, via
+  the existing `externalsecret-openlex.yaml`'s `dataFrom.extract`; no other `.tf` file
+  references this resource by name).
 
 - [ ] **Step 1: Add the `random` provider**
 
@@ -276,20 +290,27 @@ resource "aws_secretsmanager_secret" "app" {
   name = "${var.secrets_manager_path_prefix}/app"
 }
 
-# Writes only the DATABASE_URL key on the *first* apply -- the other keys this secret needs
-# (ANTHROPIC_API_KEY, NY_OPEN_LEG_API_KEY, JWT_SECRET_KEY, DEMO_*) are external credentials
-# Terraform has no business generating, and must be merged in by hand afterward (see
-# infra/terraform/README.md's updated step 5). lifecycle.ignore_changes on secret_string means
-# that manual merge survives every subsequent `terraform apply` -- without it, re-applying this
-# resource would silently overwrite the merged secret back down to just DATABASE_URL, deleting
-# the other 4 keys. The real tradeoff: after the first apply, Terraform also stops updating
-# DATABASE_URL itself on this secret (e.g. if the DB were ever recreated with a new generated
-# password) -- acceptable here since recreating aws_db_instance.openlex is itself a rare,
-# deliberate, manually-supervised event, not something that happens silently.
+# Writes DATABASE_URL and POSTGRES_EXPORTER_DSN on the *first* apply -- the other keys this
+# secret needs (ANTHROPIC_API_KEY, NY_OPEN_LEG_API_KEY, JWT_SECRET_KEY, DEMO_*) are external
+# credentials Terraform has no business generating, and must be merged in by hand afterward
+# (see infra/terraform/README.md's updated step 5). lifecycle.ignore_changes on secret_string
+# means that manual merge survives every subsequent `terraform apply` -- without it,
+# re-applying this resource would silently overwrite the merged secret back down to just these
+# two keys, deleting the other 4. The real tradeoff: after the first apply, Terraform also
+# stops updating DATABASE_URL/POSTGRES_EXPORTER_DSN themselves on this secret (e.g. if the DB
+# were ever recreated with a new generated password) -- acceptable here since recreating
+# aws_db_instance.openlex is itself a rare, deliberate, manually-supervised event, not
+# something that happens silently.
+#
+# POSTGRES_EXPORTER_DSN mirrors scripts/kind-secrets-bootstrap.sh's existing derivation for
+# the same purpose (Task 9, 7.6 revised: prometheus-postgres-exporter's `config.datasourceSecret`
+# needs a plain libpq DSN, not SQLAlchemy's `+asyncpg` scheme DATABASE_URL uses) -- adjusted to
+# `sslmode=require` since RDS, unlike kind's local Postgres, supports real TLS.
 resource "aws_secretsmanager_secret_version" "app" {
   secret_id = aws_secretsmanager_secret.app.id
   secret_string = jsonencode({
-    DATABASE_URL = "postgresql+asyncpg://${var.db_username}:${random_password.rds.result}@${aws_db_instance.openlex.address}:5432/${var.db_name}"
+    DATABASE_URL          = "postgresql+asyncpg://${var.db_username}:${random_password.rds.result}@${aws_db_instance.openlex.address}:5432/${var.db_name}"
+    POSTGRES_EXPORTER_DSN = "postgresql://${var.db_username}:${random_password.rds.result}@${aws_db_instance.openlex.address}:5432/${var.db_name}?sslmode=require"
   })
 
   lifecycle {
@@ -311,11 +332,11 @@ Replace the existing step 5 bullet:
 with:
 
 ```
-5. `terraform apply` already created `openlex/app` with a single `DATABASE_URL` key (see
-   `rds.tf`). Merge in the remaining keys it needs (`ANTHROPIC_API_KEY`,
-   `NY_OPEN_LEG_API_KEY`, `JWT_SECRET_KEY`, `DEMO_*`) — Terraform deliberately never touches
-   this secret's value again after its first write (see `rds.tf`'s `ignore_changes` comment),
-   so this merge is safe to do once and durable:
+5. `terraform apply` already created `openlex/app` with `DATABASE_URL` and
+   `POSTGRES_EXPORTER_DSN` keys (see `rds.tf`). Merge in the remaining keys it needs
+   (`ANTHROPIC_API_KEY`, `NY_OPEN_LEG_API_KEY`, `JWT_SECRET_KEY`, `DEMO_*`) — Terraform
+   deliberately never touches this secret's value again after its first write (see `rds.tf`'s
+   `ignore_changes` comment), so this merge is safe to do once and durable:
    ```bash
    aws secretsmanager get-secret-value --secret-id openlex/app --query SecretString --output text > /tmp/openlex-app.json
    # edit /tmp/openlex-app.json: add ANTHROPIC_API_KEY, NY_OPEN_LEG_API_KEY, JWT_SECRET_KEY,
@@ -654,10 +675,10 @@ module "eks" {
 
   eks_managed_node_groups = {
     # Mirrors kind's dedicated-worker split (docs/infrastructure/kubernetes-topology.md):
-    # ArgoCD + the observability stack (Grafana/OTel Collector/Fluent Bit — kept minimal per
-    # docs/superpowers/specs/2026-07-14-phase7-aws-rds-secrets-manager-design.md's 7.6, but
-    # still real workloads with real PVCs) get their own node group, tainted so nothing else
-    # schedules there by accident.
+    # ArgoCD + the full self-hosted observability stack (kube-prometheus-stack, Tempo, Jaeger,
+    # Loki, Promtail, OTel Collector — see docs/superpowers/specs/
+    # 2026-07-14-phase7-aws-rds-secrets-manager-design.md's 7.6, revised) get their own node
+    # group, tainted so nothing else schedules there by accident.
     observability = {
       instance_types = [var.observability_node_instance_type] # larger than apps — see variables.tf
       capacity_type  = "SPOT"
@@ -717,7 +738,7 @@ variable "node_instance_type" {
 }
 
 variable "observability_node_instance_type" {
-  description = "Instance type for the `observability` node group — larger than apps: Grafana + OTel Collector + Fluent Bit + ArgoCD together need more headroom"
+  description = "Instance type for the `observability` node group — larger than apps: kube-prometheus-stack + Tempo + Jaeger + Loki + Promtail + OTel Collector + ArgoCD together need more headroom"
   type        = string
   default     = "t4g.large"
 }
@@ -951,451 +972,21 @@ Expected: every match uses exactly `openlex.dev/workload` (key) and `observabili
 not a `terraform validate`/`kubectl kustomize` error, so this must be checked by eye, not
 tooling. Record the exact command output in the task report.
 
-- [ ] **Step 6: Commit**
-
-```bash
-git add infra/kubernetes/overlays/eks-demo/patch-resources.yaml infra/kubernetes/overlays/eks-demo/pdb-openlex-api.yaml infra/kubernetes/overlays/eks-demo/kustomization.yaml
-git commit -m "Add eks-demo hard anti-affinity + PDB for the apps node group (7.7)"
-```
-
----
-
-### Task 6: Cloud observability — OTel Collector, X-Ray + CloudWatch EMF (7.6a)
-
-**Files:**
-- Create: `infra/argocd/apps/eks-demo/app-otel-collector.yaml`,
-  `infra/terraform/iam_irsa_otel_collector.tf`
-- Modify: `infra/terraform/outputs.tf`, `infra/terraform/README.md`,
-  `infra/argocd/projects/appproject-eks-demo.yaml`
-
-**Interfaces:**
-- Consumes: `openlex.dev/workload: observability` taint/label (Task 4).
-- Produces: `aws_iam_role.otel_collector.arn` (output `otel_collector_role_arn`, hand-copied
-  into this task's own Application YAML per the existing README-step-4 convention — no other
-  task consumes this).
-
-- [ ] **Step 1: Write the OTel Collector IRSA role**
-
-```hcl
-# infra/terraform/iam_irsa_otel_collector.tf
-#
-# IRSA role for the OTel Collector's ServiceAccount (namespace observability, name
-# otel-collector — pinned explicitly in app-otel-collector.yaml's serviceAccount.name so this
-# trust condition matches exactly, same approach as external-secrets/external-dns).
-data "aws_iam_policy_document" "otel_collector_trust" {
-  statement {
-    effect  = "Allow"
-    actions = ["sts:AssumeRoleWithWebIdentity"]
-
-    principals {
-      type        = "Federated"
-      identifiers = [module.eks.oidc_provider_arn]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "${module.eks.oidc_provider}:sub"
-      values   = ["system:serviceaccount:observability:otel-collector"]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "${module.eks.oidc_provider}:aud"
-      values   = ["sts.amazonaws.com"]
-    }
-  }
-}
-
-resource "aws_iam_role" "otel_collector" {
-  name               = "${var.cluster_name}-otel-collector"
-  assume_role_policy = data.aws_iam_policy_document.otel_collector_trust.json
-}
-
-# Minimum permissions for the collector's awsxray + awsemf exporters (AWS's own documented
-# requirements for each): X-Ray write for traces, CloudWatch Logs/PutMetricData write for the
-# embedded-metric-format metrics pipeline.
-data "aws_iam_policy_document" "otel_collector_permissions" {
-  statement {
-    effect = "Allow"
-    actions = [
-      "xray:PutTraceSegments",
-      "xray:PutTelemetryRecords",
-      "xray:GetSamplingRules",
-      "xray:GetSamplingTargets",
-      "xray:GetSamplingStatisticSummaries",
-    ]
-    resources = ["*"] # X-Ray write actions do not support resource-level scoping
-  }
-
-  statement {
-    effect = "Allow"
-    actions = [
-      "logs:PutLogEvents",
-      "logs:CreateLogGroup",
-      "logs:CreateLogStream",
-      "logs:DescribeLogGroups",
-      "logs:DescribeLogStreams",
-      "cloudwatch:PutMetricData",
-    ]
-    resources = ["*"] # matches AWS's own documented awsemf/CloudWatch exporter policy example
-  }
-}
-
-resource "aws_iam_role_policy" "otel_collector" {
-  name   = "otel-collector-xray-cloudwatch"
-  role   = aws_iam_role.otel_collector.id
-  policy = data.aws_iam_policy_document.otel_collector_permissions.json
-}
-```
-
-- [ ] **Step 2: Add the output**
-
-Edit `infra/terraform/outputs.tf`, appending:
-
-```hcl
-
-output "otel_collector_role_arn" {
-  description = "Paste into infra/argocd/apps/eks-demo/app-otel-collector.yaml's serviceAccount.annotations"
-  value       = aws_iam_role.otel_collector.arn
-}
-```
-
-- [ ] **Step 3: Add the OTel Collector chart repo to the AppProject**
-
-Edit `infra/argocd/projects/appproject-eks-demo.yaml`'s `sourceRepos:` list, appending:
-
-```yaml
-    - https://open-telemetry.github.io/opentelemetry-helm-charts
-```
-
-- [ ] **Step 4: Write the Application**
-
-```yaml
-# infra/argocd/apps/eks-demo/app-otel-collector.yaml
-#
-# Same chart/version as infra/argocd/apps/kind/app-otel-collector.yaml, different exporters:
-# awsxray (traces -> AWS X-Ray) + awsemf (metrics -> CloudWatch, embedded metric format)
-# instead of otlp/tempo + otlp/jaeger — see docs/superpowers/specs/
-# 2026-07-14-phase7-aws-rds-secrets-manager-design.md's 7.6. Uses the *-contrib collector
-# image, unlike kind's core image, because awsxray/awsemf are contrib-only exporters (not
-# shipped in the core otel/opentelemetry-collector image kind's values-base.yaml pins).
-# Replace <OTEL_COLLECTOR_ROLE_ARN> with `terraform output otel_collector_role_arn`.
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: otel-collector
-  namespace: argocd
-  annotations:
-    argocd.argoproj.io/sync-wave: "0"
-spec:
-  project: openlex-eks-demo
-  source:
-    repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
-    chart: opentelemetry-collector
-    targetRevision: "0.165.*"
-    helm:
-      valuesObject:
-        mode: deployment
-        image:
-          repository: otel/opentelemetry-collector-contrib
-        command:
-          name: otelcol-contrib
-        serviceAccount:
-          create: true
-          name: otel-collector
-          annotations:
-            eks.amazonaws.com/role-arn: "<OTEL_COLLECTOR_ROLE_ARN>"
-        nodeSelector:
-          openlex.dev/workload: observability
-        tolerations:
-          - key: openlex.dev/workload
-            operator: Equal
-            value: observability
-            effect: NoSchedule
-        resources:
-          requests: { cpu: 25m, memory: 64Mi }
-          limits: { cpu: 200m, memory: 256Mi }
-        config:
-          receivers:
-            otlp:
-              protocols:
-                grpc:
-                  endpoint: 0.0.0.0:4317
-                http:
-                  endpoint: 0.0.0.0:4318
-          processors:
-            batch: {}
-          exporters:
-            awsxray:
-              region: us-east-1
-            awsemf:
-              region: us-east-1
-              namespace: OpenLex
-              log_group_name: "/openlex/eks-demo/metrics"
-          service:
-            pipelines:
-              traces:
-                receivers: [otlp]
-                processors: [batch]
-                exporters: [awsxray]
-              metrics:
-                receivers: [otlp]
-                processors: [batch]
-                exporters: [awsemf]
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: observability
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-```
-
-- [ ] **Step 5: Note the new README hand-copy target**
-
-Edit `infra/terraform/README.md` step 4's list to add `otel_collector_role_arn`:
-
-```
-4. Hand-copy `terraform output external_dns_role_arn`, `external_secrets_role_arn`,
-   `otel_collector_role_arn`, and `ecr_repository_urls` into the committed
-   `infra/argocd/apps/eks-demo/app-{external-dns,external-secrets,otel-collector}.yaml`
-   ServiceAccount annotations and `infra/kubernetes/overlays/eks-demo/kustomization.yaml`'s
-   `images:` block. This is the one place a Terraform output has to flow into a Git-committed
-   manifest by hand — an accepted GitOps-purity gap (same category as `kind`'s manual secret
-   bootstrap).
-```
-
-- [ ] **Step 6: Validate**
-
-```bash
-cd infra/terraform && terraform fmt -check && terraform init -backend=false && terraform validate
-```
-
-Expected: `Success! The configuration is valid.`
-
-Manually cross-check `app-otel-collector.yaml`'s `config:` block against the OTel Collector
-`awsxray`/`awsemf` exporter docs (`WebFetch`
-`https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/awsxrayexporter`
-and `.../exporter/awsemfexporter`, record what was checked in the task report) — confirm
-`region`/`namespace`/`log_group_name` are the documented field names for each exporter.
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add infra/argocd/apps/eks-demo/app-otel-collector.yaml infra/terraform/iam_irsa_otel_collector.tf infra/terraform/outputs.tf infra/terraform/README.md infra/argocd/projects/appproject-eks-demo.yaml
-git commit -m "Add OTel Collector for eks-demo: X-Ray traces + CloudWatch EMF metrics (7.6)"
-```
-
----
-
-### Task 7: Cloud observability — Fluent Bit, CloudWatch Logs (7.6b)
-
-**Files:**
-- Create: `infra/argocd/apps/eks-demo/app-fluent-bit.yaml`,
-  `infra/terraform/iam_irsa_fluent_bit.tf`
-- Modify: `infra/terraform/outputs.tf`, `infra/terraform/README.md`,
-  `infra/argocd/projects/appproject-eks-demo.yaml`
-
-**Interfaces:**
-- Consumes: nothing from earlier tasks (deliberately unrestricted by the observability
-  node-group taint — see Step 3's note).
-- Produces: `aws_iam_role.fluent_bit.arn` (output `fluent_bit_role_arn`).
-
-- [ ] **Step 1: Write the Fluent Bit IRSA role**
-
-```hcl
-# infra/terraform/iam_irsa_fluent_bit.tf
-#
-# IRSA role for aws-for-fluent-bit's ServiceAccount (namespace observability, name
-# aws-for-fluent-bit — pinned explicitly in app-fluent-bit.yaml's serviceAccount.name).
-data "aws_iam_policy_document" "fluent_bit_trust" {
-  statement {
-    effect  = "Allow"
-    actions = ["sts:AssumeRoleWithWebIdentity"]
-
-    principals {
-      type        = "Federated"
-      identifiers = [module.eks.oidc_provider_arn]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "${module.eks.oidc_provider}:sub"
-      values   = ["system:serviceaccount:observability:aws-for-fluent-bit"]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "${module.eks.oidc_provider}:aud"
-      values   = ["sts.amazonaws.com"]
-    }
-  }
-}
-
-resource "aws_iam_role" "fluent_bit" {
-  name               = "${var.cluster_name}-fluent-bit"
-  assume_role_policy = data.aws_iam_policy_document.fluent_bit_trust.json
-}
-
-data "aws_iam_policy_document" "fluent_bit_permissions" {
-  statement {
-    effect = "Allow"
-    actions = [
-      "logs:CreateLogGroup",
-      "logs:CreateLogStream",
-      "logs:PutLogEvents",
-      "logs:DescribeLogGroups",
-      "logs:DescribeLogStreams",
-    ]
-    resources = ["arn:aws:logs:${var.region}:*:log-group:/openlex/eks-demo/*"]
-  }
-}
-
-resource "aws_iam_role_policy" "fluent_bit" {
-  name   = "fluent-bit-cloudwatch-logs"
-  role   = aws_iam_role.fluent_bit.id
-  policy = data.aws_iam_policy_document.fluent_bit_permissions.json
-}
-```
-
-- [ ] **Step 2: Add the output**
-
-Edit `infra/terraform/outputs.tf`, appending:
-
-```hcl
-
-output "fluent_bit_role_arn" {
-  description = "Paste into infra/argocd/apps/eks-demo/app-fluent-bit.yaml's serviceAccount.annotations"
-  value       = aws_iam_role.fluent_bit.arn
-}
-```
-
-- [ ] **Step 3: Add the chart repo to the AppProject**
-
-Edit `infra/argocd/projects/appproject-eks-demo.yaml`'s `sourceRepos:` list, appending:
-
-```yaml
-    - https://aws.github.io/eks-charts
-```
-
-- [ ] **Step 4: Write the Application**
-
-```yaml
-# infra/argocd/apps/eks-demo/app-fluent-bit.yaml
-#
-# EKS's standard logging path (see docs/superpowers/specs/
-# 2026-07-14-phase7-aws-rds-secrets-manager-design.md's 7.6) — a DaemonSet, deliberately with
-# NO nodeSelector restricting it to the observability node group: it needs to tail container
-# logs on the `apps` node group too (openlex-api/worker's own pod logs). Uses a blanket
-# toleration (not scoped to the observability taint alone), the same reasoning already
-# documented in infra/argocd/apps/kind/app-kube-prometheus-stack.yaml for
-# prometheus-node-exporter's toleration (a scoped-only toleration previously caused a live bug
-# where node-exporter silently missed the control-plane node — same class of mistake, avoided
-# here from the start). Replace <FLUENT_BIT_ROLE_ARN> with `terraform output fluent_bit_role_arn`.
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: aws-for-fluent-bit
-  namespace: argocd
-  annotations:
-    argocd.argoproj.io/sync-wave: "0"
-spec:
-  project: openlex-eks-demo
-  source:
-    repoURL: https://aws.github.io/eks-charts
-    chart: aws-for-fluent-bit
-    targetRevision: "0.1.*"
-    helm:
-      valuesObject:
-        serviceAccount:
-          create: true
-          name: aws-for-fluent-bit
-          annotations:
-            eks.amazonaws.com/role-arn: "<FLUENT_BIT_ROLE_ARN>"
-        tolerations:
-          - operator: Exists
-        cloudWatch:
-          enabled: true
-          region: us-east-1
-          logGroupName: "/openlex/eks-demo/logs"
-          logStreamPrefix: "fluentbit-"
-          logRetentionDays: 14
-        firehose:
-          enabled: false
-        kinesis:
-          enabled: false
-        elasticsearch:
-          enabled: false
-        resources:
-          requests: { cpu: 25m, memory: 32Mi }
-          limits: { cpu: 100m, memory: 64Mi }
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: observability
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-```
-
-- [ ] **Step 5: Note the new README hand-copy target**
-
-Edit `infra/terraform/README.md` step 4's list (from Task 6's version) to also add
-`fluent_bit_role_arn` and `app-fluent-bit.yaml`.
-
-- [ ] **Step 6: Validate**
-
-```bash
-cd infra/terraform && terraform fmt -check && terraform init -backend=false && terraform validate
-```
-
-Expected: `Success! The configuration is valid.`
-
-Manually cross-check `app-fluent-bit.yaml`'s `cloudWatch`/`firehose`/`kinesis`/`elasticsearch`
-values keys against the `aws-for-fluent-bit` chart's actual `values.yaml` (`WebFetch`
-`https://github.com/aws/eks-charts/blob/master/stable/aws-for-fluent-bit/values.yaml`, record
-what was checked). If the chart's real key names differ from this draft (chart versions do
-drift), correct them here before committing.
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add infra/argocd/apps/eks-demo/app-fluent-bit.yaml infra/terraform/iam_irsa_fluent_bit.tf infra/terraform/outputs.tf infra/terraform/README.md infra/argocd/projects/appproject-eks-demo.yaml
-git commit -m "Add Fluent Bit for eks-demo: CloudWatch Logs (7.6)"
-```
-
----
-
-### Task 8: Cloud observability — Grafana, CloudWatch + X-Ray datasources (7.6c)
-
-**Files:**
-- Create: `infra/argocd/apps/eks-demo/app-grafana.yaml`,
-  `infra/kubernetes/overlays/eks-demo/storageclass-gp3.yaml`,
-  `infra/terraform/iam_irsa_grafana.tf`
-- Modify: `infra/terraform/outputs.tf`, `infra/terraform/README.md`,
-  `infra/kubernetes/overlays/eks-demo/kustomization.yaml`,
-  `infra/argocd/projects/appproject-eks-demo.yaml`
-
-**Interfaces:**
-- Consumes: `openlex.dev/workload: observability` (Task 4), the `ebs.csi.aws.com` provisioner
-  (Task 4's `aws_eks_addon.ebs_csi`).
-- Produces: `aws_iam_role.grafana.arn` (output `grafana_role_arn`); a Kubernetes Service named
-  `grafana` on port `80` (the standalone `grafana/grafana` chart's default Service naming/port)
-  — consumed by Task 9's Ingress.
-
-- [ ] **Step 1: Write the `gp3` StorageClass**
+- [ ] **Step 6: Write the `gp3` StorageClass**
+
+Tasks 6/7 (Tempo, Loki) need real persistent storage — kind's equivalent PVCs bind against
+kind's default `standard` StorageClass automatically; `eks-demo` needs the same "just works"
+default, backed by the `aws-ebs-csi-driver` addon Task 4 already installed:
 
 ```yaml
 # infra/kubernetes/overlays/eks-demo/storageclass-gp3.yaml
 #
 # The aws-ebs-csi-driver EKS addon (infra/terraform/eks.tf, Task 4) installs the CSI driver
 # itself but does not create a gp3 StorageClass automatically -- EKS's built-in default is
-# still the older in-tree "gp2" StorageClass. Grafana's PVC below requests
-# storageClassName: gp3 explicitly, so this must exist. Cluster-scoped -- kustomize's
+# still the older in-tree "gp2" StorageClass. Marked as the cluster's default StorageClass so
+# Tempo's and Loki's PVCs (Tasks 6/7) bind automatically without needing an explicit
+# storageClassName override in either chart's values -- the same "just works" experience kind
+# gets from its own default `standard` StorageClass. Cluster-scoped -- kustomize's
 # `namespace: openlex` transformer (this overlay's global setting) only affects namespaced
 # resources, so it's safe to include here.
 apiVersion: storage.k8s.io/v1
@@ -1410,10 +1001,8 @@ parameters:
   type: gp3
 ```
 
-- [ ] **Step 2: Add it to the kustomization**
-
-Edit `infra/kubernetes/overlays/eks-demo/kustomization.yaml`'s `resources:` list (from Task
-5's version), appending `storageclass-gp3.yaml`:
+Add it to `infra/kubernetes/overlays/eks-demo/kustomization.yaml`'s `resources:` list (from
+Step 3 above), appending `storageclass-gp3.yaml`:
 
 ```yaml
 resources:
@@ -1425,177 +1014,94 @@ resources:
   - storageclass-gp3.yaml
 ```
 
-- [ ] **Step 3: Write the Grafana IRSA role**
-
-```hcl
-# infra/terraform/iam_irsa_grafana.tf
-#
-# IRSA role for Grafana's ServiceAccount (namespace observability, name grafana — pinned
-# explicitly in app-grafana.yaml's serviceAccount.name).
-data "aws_iam_policy_document" "grafana_trust" {
-  statement {
-    effect  = "Allow"
-    actions = ["sts:AssumeRoleWithWebIdentity"]
-
-    principals {
-      type        = "Federated"
-      identifiers = [module.eks.oidc_provider_arn]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "${module.eks.oidc_provider}:sub"
-      values   = ["system:serviceaccount:observability:grafana"]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "${module.eks.oidc_provider}:aud"
-      values   = ["sts.amazonaws.com"]
-    }
-  }
-}
-
-resource "aws_iam_role" "grafana" {
-  name               = "${var.cluster_name}-grafana"
-  assume_role_policy = data.aws_iam_policy_document.grafana_trust.json
-}
-
-# Read-only permissions matching Grafana's own documented IAM policy examples for the
-# CloudWatch (core) and X-Ray (grafana-x-ray-datasource plugin) datasources.
-data "aws_iam_policy_document" "grafana_permissions" {
-  statement {
-    effect = "Allow"
-    actions = [
-      "cloudwatch:GetMetricData",
-      "cloudwatch:GetMetricStatistics",
-      "cloudwatch:ListMetrics",
-      "cloudwatch:DescribeAlarmsForMetric",
-      "logs:GetLogEvents",
-      "logs:GetLogGroupFields",
-      "logs:StartQuery",
-      "logs:StopQuery",
-      "logs:GetQueryResults",
-      "logs:GetLogRecord",
-      "logs:DescribeLogGroups",
-      "logs:DescribeLogStreams",
-      "ec2:DescribeTags",
-      "ec2:DescribeInstances",
-      "ec2:DescribeRegions",
-      "tag:GetResources",
-    ]
-    resources = ["*"]
-  }
-
-  statement {
-    effect = "Allow"
-    actions = [
-      "xray:GetTraceSummaries",
-      "xray:BatchGetTraces",
-      "xray:GetTraceGraph",
-      "xray:GetGroups",
-      "xray:GetTimeSeriesServiceStatistics",
-      "xray:GetInsightSummaries",
-      "xray:GetInsight",
-    ]
-    resources = ["*"]
-  }
-}
-
-resource "aws_iam_role_policy" "grafana" {
-  name   = "grafana-cloudwatch-xray-read"
-  role   = aws_iam_role.grafana.id
-  policy = data.aws_iam_policy_document.grafana_permissions.json
-}
+```bash
+kubectl kustomize infra/kubernetes/overlays/eks-demo | grep -A3 "kind: StorageClass"
 ```
 
-- [ ] **Step 4: Add the output**
+Expected: renders the `gp3` `StorageClass` with `provisioner: ebs.csi.aws.com`.
 
-Edit `infra/terraform/outputs.tf`, appending:
+- [ ] **Step 7: Commit**
 
-```hcl
-
-output "grafana_role_arn" {
-  description = "Paste into infra/argocd/apps/eks-demo/app-grafana.yaml's serviceAccount.annotations"
-  value       = aws_iam_role.grafana.arn
-}
+```bash
+git add infra/kubernetes/overlays/eks-demo/patch-resources.yaml infra/kubernetes/overlays/eks-demo/pdb-openlex-api.yaml infra/kubernetes/overlays/eks-demo/storageclass-gp3.yaml infra/kubernetes/overlays/eks-demo/kustomization.yaml
+git commit -m "Add eks-demo hard anti-affinity + PDB + gp3 StorageClass for the apps node group (7.7)"
 ```
 
-- [ ] **Step 5: Add the Grafana chart repo to the AppProject**
+---
+
+### Task 6: Observability — OTel Collector, Tempo, Jaeger (traces, mirrors kind) (7.6 revised)
+
+**Files:**
+- Create: `infra/argocd/apps/eks-demo/app-otel-collector.yaml`,
+  `infra/argocd/apps/eks-demo/app-tempo.yaml`, `infra/argocd/apps/eks-demo/app-jaeger.yaml`
+- Modify: `infra/argocd/projects/appproject-eks-demo.yaml`
+
+**Interfaces:**
+- Consumes: `openlex.dev/workload: observability` taint/label (Task 4), the `gp3`
+  `StorageClass` (Task 5), the shared `infra/monitoring/{otel-collector,tempo,jaeger}/
+  values-base.yaml` files (exist today, already written to be consumed by "the kind
+  Application and any future eks-demo Application").
+- Produces: an `otel-collector-opentelemetry-collector` Service (OTLP receiver, ports
+  4317/4318) in the `observability` namespace — no later task in this plan sends traces to it
+  directly (apps/api's own OTel wiring is out of this plan's scope, unchanged from what already
+  exists), but it's the collector every future app deployment on `eks-demo` will point at.
+
+These three are a near-literal copy of their kind counterparts — same chart/version, same
+`$values` file reference, only `project`/`targetRevision` differ. Read each kind file first so
+the diff is obvious.
+
+- [ ] **Step 1: Add the OTel Collector, Tempo, and Jaeger chart repos to the AppProject**
 
 Edit `infra/argocd/projects/appproject-eks-demo.yaml`'s `sourceRepos:` list, appending:
 
 ```yaml
+    - https://open-telemetry.github.io/opentelemetry-helm-charts
     - https://grafana.github.io/helm-charts
+    - https://jaegertracing.github.io/helm-charts
 ```
 
-- [ ] **Step 6: Write the Application**
+- [ ] **Step 2: Write the OTel Collector Application**
+
+Read `infra/argocd/apps/kind/app-otel-collector.yaml` first (identical shape, `project` and
+`targetRevision` differ only):
 
 ```yaml
-# infra/argocd/apps/eks-demo/app-grafana.yaml
+# infra/argocd/apps/eks-demo/app-otel-collector.yaml
 #
-# Standalone chart (not the kube-prometheus-stack bundle kind uses) -- see 7.6's design: the
-# one place kind and eks-demo stay visually consistent even though their backends differ
-# completely (CloudWatch/X-Ray here vs. self-hosted Prometheus/Tempo/Jaeger/Loki on kind).
-# CloudWatch is a Grafana *core* built-in datasource (no plugin needed); X-Ray needs the
-# grafana-x-ray-datasource plugin installed explicitly -- a correction to the design spec's
-# "no plugin gymnastics" framing (confirmed against Grafana's own plugin catalog; see the
-# plan's "Note on a minor spec correction" at the top of this document).
-# Replace <GRAFANA_ROLE_ARN> with `terraform output grafana_role_arn`.
+# Identical to infra/argocd/apps/kind/app-otel-collector.yaml — same chart/version/
+# values-base.yaml, same otlp/tempo + otlp/jaeger dual export (no AWS exporters; see the
+# plan's "Note on the 7.6/7.9 revision"). Only `project` and the values-repo source's
+# `targetRevision` (main, not develop — eks-demo tracks main) differ.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: grafana
+  name: otel-collector
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "0"
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   project: openlex-eks-demo
-  source:
-    repoURL: https://grafana.github.io/helm-charts
-    chart: grafana
-    targetRevision: "8.7.*"
-    helm:
-      valuesObject:
-        serviceAccount:
-          create: true
-          name: grafana
-          annotations:
-            eks.amazonaws.com/role-arn: "<GRAFANA_ROLE_ARN>"
-        nodeSelector:
-          openlex.dev/workload: observability
-        tolerations:
-          - key: openlex.dev/workload
-            operator: Equal
-            value: observability
-            effect: NoSchedule
-        resources:
-          requests: { cpu: 50m, memory: 256Mi }
-          limits: { cpu: 300m, memory: 768Mi }
-        persistence:
-          enabled: true
-          size: 1Gi
-          storageClassName: gp3
-        plugins:
-          - grafana-x-ray-datasource
-        datasources:
-          datasources.yaml:
-            apiVersion: 1
-            datasources:
-              - name: CloudWatch
-                type: cloudwatch
-                access: proxy
-                jsonData:
-                  authType: default
-                  defaultRegion: us-east-1
-                isDefault: true
-              - name: X-Ray
-                type: grafana-x-ray-datasource
-                access: proxy
-                jsonData:
-                  authType: default
-                  defaultRegion: us-east-1
-                isDefault: false
+  sources:
+    - repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
+      chart: opentelemetry-collector
+      targetRevision: "0.165.*"
+      helm:
+        valueFiles:
+          - $values/infra/monitoring/otel-collector/values-base.yaml
+        valuesObject:
+          nodeSelector:
+            openlex.dev/workload: observability
+          tolerations:
+            - key: openlex.dev/workload
+              operator: Equal
+              value: observability
+              effect: NoSchedule
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 256Mi }
+    - repoURL: https://github.com/rozdolsky33/OpenLex.git
+      targetRevision: main
+      ref: values
   destination:
     server: https://kubernetes.default.svc
     namespace: observability
@@ -1607,57 +1113,629 @@ spec:
       - CreateNamespace=true
 ```
 
-- [ ] **Step 7: Note the new README hand-copy target**
+- [ ] **Step 3: Write the Tempo Application**
 
-Edit `infra/terraform/README.md` step 4's list (from Task 7's version) to also add
-`grafana_role_arn` and `app-grafana.yaml`.
+Read `infra/argocd/apps/kind/app-tempo.yaml` first:
 
-- [ ] **Step 8: Validate**
-
-```bash
-cd infra/terraform && terraform fmt -check && terraform init -backend=false && terraform validate
+```yaml
+# infra/argocd/apps/eks-demo/app-tempo.yaml
+#
+# Identical to infra/argocd/apps/kind/app-tempo.yaml. persistence.enabled/size (in the shared
+# values-base.yaml) binds against the gp3 StorageClass (Task 5's default-class annotation) --
+# no storageClassName override needed here, same as kind relying on its own default `standard`
+# StorageClass.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tempo
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: openlex-eks-demo
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: tempo
+      targetRevision: "1.24.*"
+      helm:
+        valueFiles:
+          - $values/infra/monitoring/tempo/values-base.yaml
+        valuesObject:
+          nodeSelector:
+            openlex.dev/workload: observability
+          tolerations:
+            - key: openlex.dev/workload
+              operator: Equal
+              value: observability
+              effect: NoSchedule
+          tempo:
+            memBallastSizeMbs: 128
+            resources:
+              requests: { cpu: 50m, memory: 512Mi }
+              limits: { cpu: 500m, memory: 1536Mi }
+    - repoURL: https://github.com/rozdolsky33/OpenLex.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
 ```
 
-Expected: `Success! The configuration is valid.`
+- [ ] **Step 4: Write the Jaeger Application**
 
-```bash
-kubectl kustomize infra/kubernetes/overlays/eks-demo | grep -A3 "kind: StorageClass"
+Read `infra/argocd/apps/kind/app-jaeger.yaml` first:
+
+```yaml
+# infra/argocd/apps/eks-demo/app-jaeger.yaml
+#
+# Identical to infra/argocd/apps/kind/app-jaeger.yaml — in-memory storage (comparison backend,
+# data does not survive a pod restart), no PVC, no StorageClass dependency.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: jaeger
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: openlex-eks-demo
+  sources:
+    - repoURL: https://jaegertracing.github.io/helm-charts
+      chart: jaeger
+      targetRevision: "4.11.*"
+      helm:
+        valueFiles:
+          - $values/infra/monitoring/jaeger/values-base.yaml
+        valuesObject:
+          jaeger:
+            nodeSelector:
+              openlex.dev/workload: observability
+            tolerations:
+              - key: openlex.dev/workload
+                operator: Equal
+                value: observability
+                effect: NoSchedule
+            resources:
+              requests: { cpu: 50m, memory: 128Mi }
+              limits: { cpu: 200m, memory: 256Mi }
+    - repoURL: https://github.com/rozdolsky33/OpenLex.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
 ```
 
-Expected: renders the `gp3` StorageClass with `provisioner: ebs.csi.aws.com`.
-
-Manually cross-check `app-grafana.yaml`'s `datasources.datasources.yaml` shape and the
-`grafana-x-ray-datasource` plugin's `jsonData` fields against Grafana's own provisioning docs
-(`WebFetch` `https://grafana.com/docs/grafana/latest/administration/provisioning/#datasources`
-and the plugin's own README on grafana.com/grafana/plugins/grafana-x-ray-datasource, record
-what was checked).
-
-- [ ] **Step 9: Commit**
+- [ ] **Step 5: Validate**
 
 ```bash
-git add infra/argocd/apps/eks-demo/app-grafana.yaml infra/kubernetes/overlays/eks-demo/storageclass-gp3.yaml infra/kubernetes/overlays/eks-demo/kustomization.yaml infra/terraform/iam_irsa_grafana.tf infra/terraform/outputs.tf infra/terraform/README.md infra/argocd/projects/appproject-eks-demo.yaml
-git commit -m "Add standalone Grafana for eks-demo: CloudWatch + X-Ray datasources (7.6)"
+diff <(grep -v "^apiVersion: argoproj" infra/argocd/apps/kind/app-otel-collector.yaml) <(grep -v "^apiVersion: argoproj" infra/argocd/apps/eks-demo/app-otel-collector.yaml)
+diff <(grep -v "^apiVersion: argoproj" infra/argocd/apps/kind/app-tempo.yaml) <(grep -v "^apiVersion: argoproj" infra/argocd/apps/eks-demo/app-tempo.yaml)
+diff <(grep -v "^apiVersion: argoproj" infra/argocd/apps/kind/app-jaeger.yaml) <(grep -v "^apiVersion: argoproj" infra/argocd/apps/eks-demo/app-jaeger.yaml)
+```
+
+Expected: the only differences per file are the header comment, `project: openlex-eks-demo`
+(vs. `openlex-kind`), and `targetRevision: main` (vs. `develop`) on the values-repo source.
+Anything else differing is a real mistake — fix it before committing.
+
+```bash
+python3 -c "import yaml; [yaml.safe_load(open(f)) for f in ['infra/argocd/apps/eks-demo/app-otel-collector.yaml','infra/argocd/apps/eks-demo/app-tempo.yaml','infra/argocd/apps/eks-demo/app-jaeger.yaml']]" && echo OK
+```
+
+Expected: `OK`, no exceptions.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add infra/argocd/apps/eks-demo/app-otel-collector.yaml infra/argocd/apps/eks-demo/app-tempo.yaml infra/argocd/apps/eks-demo/app-jaeger.yaml infra/argocd/projects/appproject-eks-demo.yaml
+git commit -m "Mirror kind's OTel Collector/Tempo/Jaeger onto eks-demo (7.6 revised)"
 ```
 
 ---
 
-### Task 9: Ingress + oauth2-proxy for Grafana (7.9)
+### Task 7: Observability — Loki, Promtail (logs, mirrors kind) (7.6 revised)
 
 **Files:**
-- Create: `infra/argocd/apps/eks-demo/app-oauth2-proxy.yaml`,
-  `infra/argocd/apps/eks-demo/externalsecret-oauth2-proxy.yaml`,
-  `infra/argocd/apps/eks-demo/ingress-grafana.yaml`
+- Create: `infra/argocd/apps/eks-demo/app-loki.yaml`, `infra/argocd/apps/eks-demo/app-promtail.yaml`
+
+**Interfaces:**
+- Consumes: `openlex.dev/workload: observability`/`apps` taints/labels (Task 4), the `gp3`
+  `StorageClass` (Task 5), `grafana.github.io/helm-charts` (already in the AppProject's
+  `sourceRepos` from Task 6 — Loki uses the same repo Tempo does).
+- Produces: a `loki` Service (push/query API, port 3100) in the `observability` namespace —
+  consumed by Task 8's Grafana (as a datasource) and by Promtail (this task).
+
+Both are a near-literal copy of their kind counterparts. Read each kind file first.
+
+- [ ] **Step 1: Write the Loki Application**
+
+Read `infra/argocd/apps/kind/app-loki.yaml` first:
+
+```yaml
+# infra/argocd/apps/eks-demo/app-loki.yaml
+#
+# Identical to infra/argocd/apps/kind/app-loki.yaml — SingleBinary mode, replication_factor 1
+# (all in the shared values-base.yaml). singleBinary.persistence (chart default: enabled)
+# binds against the gp3 StorageClass (Task 5's default-class annotation) -- no
+# storageClassName override needed, same as kind relying on its own default `standard`
+# StorageClass.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: openlex-eks-demo
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: loki
+      targetRevision: "7.0.*"
+      helm:
+        valueFiles:
+          - $values/infra/monitoring/loki/values-base.yaml
+        valuesObject:
+          singleBinary:
+            nodeSelector:
+              openlex.dev/workload: observability
+            tolerations:
+              - key: openlex.dev/workload
+                operator: Equal
+                value: observability
+                effect: NoSchedule
+            resources:
+              requests: { cpu: 50m, memory: 128Mi }
+              limits: { cpu: 200m, memory: 384Mi }
+    - repoURL: https://github.com/rozdolsky33/OpenLex.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+```
+
+- [ ] **Step 2: Write the Promtail Application**
+
+Read `infra/argocd/apps/kind/app-promtail.yaml` first:
+
+```yaml
+# infra/argocd/apps/eks-demo/app-promtail.yaml
+#
+# Identical to infra/argocd/apps/kind/app-promtail.yaml — DaemonSet, deliberately no
+# nodeSelector (must run on both node groups to ship openlex-api/worker's own pod logs too,
+# not just observability-node components), three-entry toleration list (control-plane taint +
+# master taint + the observability taint) so nothing gets silently dropped by Helm's
+# array-replace-not-merge values semantics -- same reasoning as kind's own file.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: promtail
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: openlex-eks-demo
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: promtail
+      targetRevision: "6.17.*"
+      helm:
+        valueFiles:
+          - $values/infra/monitoring/promtail/values-base.yaml
+        valuesObject:
+          tolerations:
+            - key: node-role.kubernetes.io/master
+              operator: Exists
+              effect: NoSchedule
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+              effect: NoSchedule
+            - key: openlex.dev/workload
+              operator: Equal
+              value: observability
+              effect: NoSchedule
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { cpu: 100m, memory: 128Mi }
+    - repoURL: https://github.com/rozdolsky33/OpenLex.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+```
+
+- [ ] **Step 3: Validate**
+
+```bash
+diff <(grep -v "^apiVersion: argoproj" infra/argocd/apps/kind/app-loki.yaml) <(grep -v "^apiVersion: argoproj" infra/argocd/apps/eks-demo/app-loki.yaml)
+diff <(grep -v "^apiVersion: argoproj" infra/argocd/apps/kind/app-promtail.yaml) <(grep -v "^apiVersion: argoproj" infra/argocd/apps/eks-demo/app-promtail.yaml)
+```
+
+Expected: same pattern as Task 6 Step 5 — only header comment/`project`/`targetRevision`
+differ.
+
+```bash
+python3 -c "import yaml; [yaml.safe_load(open(f)) for f in ['infra/argocd/apps/eks-demo/app-loki.yaml','infra/argocd/apps/eks-demo/app-promtail.yaml']]" && echo OK
+```
+
+Expected: `OK`.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add infra/argocd/apps/eks-demo/app-loki.yaml infra/argocd/apps/eks-demo/app-promtail.yaml
+git commit -m "Mirror kind's Loki/Promtail onto eks-demo (7.6 revised)"
+```
+
+---
+
+### Task 8: Observability — kube-prometheus-stack + dashboards (mirrors kind) (7.6 revised)
+
+**Files:**
+- Create: `infra/argocd/apps/eks-demo/app-kube-prometheus-stack.yaml`,
+  `infra/argocd/apps/eks-demo/app-observability-dashboards.yaml`
+- Modify: `infra/argocd/projects/appproject-eks-demo.yaml`
+
+**Interfaces:**
+- Consumes: `openlex.dev/workload: observability` taint/label (Task 4), Tempo's
+  `metricsGenerator.remoteWriteUrl` (Task 6, already hardcoded in the shared
+  `tempo/values-base.yaml` to `kube-prometheus-stack-prometheus.observability.svc.cluster.local`
+  — this Service name is what this task's Application name (`kube-prometheus-stack`) produces
+  via the chart's default fullname).
+- Produces: a `kube-prometheus-stack-grafana` Service (port 80) — consumed by Task 10's
+  Ingress. A `kube-prometheus-stack-prometheus` Service (port 9090) and
+  `kube-prometheus-stack-alertmanager` Service (port 9093) — consumed by Task 10's
+  port-forward script.
+
+- [ ] **Step 1: Add the prometheus-community chart repo to the AppProject**
+
+Edit `infra/argocd/projects/appproject-eks-demo.yaml`'s `sourceRepos:` list, appending:
+
+```yaml
+    - https://prometheus-community.github.io/helm-charts
+```
+
+- [ ] **Step 2: Write the kube-prometheus-stack Application**
+
+Read `infra/argocd/apps/kind/app-kube-prometheus-stack.yaml` first (the largest of the mirrored
+files — same reasoning applies: only `project`, `targetRevision`, and the Grafana
+`additionalDataSources` block differ, since eks-demo's Tempo/Jaeger/Loki Services live at the
+same in-cluster DNS names as kind's, just resolved against this cluster instead):
+
+```yaml
+# infra/argocd/apps/eks-demo/app-kube-prometheus-stack.yaml
+#
+# Identical to infra/argocd/apps/kind/app-kube-prometheus-stack.yaml, including the shared
+# values-base.yaml's additionalPrometheusRulesMap (the five symptom-based alerts) and
+# Grafana's dashboard sidecar config -- both apply to eks-demo automatically once this
+# Application syncs, no separate wiring needed. additionalDataSources' URLs are unchanged from
+# kind's: Tempo/Jaeger/Loki resolve at the same in-cluster Service DNS names here as they do
+# on kind (Tasks 6/7 gave eks-demo its own tempo/jaeger/loki Services in the same
+# `observability` namespace).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: openlex-eks-demo
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: kube-prometheus-stack
+      targetRevision: "87.15.*"
+      helm:
+        valueFiles:
+          - $values/infra/monitoring/kube-prometheus-stack/values-base.yaml
+        valuesObject:
+          prometheusOperator:
+            nodeSelector:
+              openlex.dev/workload: observability
+            tolerations:
+              - key: openlex.dev/workload
+                operator: Equal
+                value: observability
+                effect: NoSchedule
+          prometheus:
+            prometheusSpec:
+              retention: 6h
+              nodeSelector:
+                openlex.dev/workload: observability
+              tolerations:
+                - key: openlex.dev/workload
+                  operator: Equal
+                  value: observability
+                  effect: NoSchedule
+              resources:
+                requests: { cpu: 100m, memory: 400Mi }
+                limits: { cpu: 500m, memory: 800Mi }
+          alertmanager:
+            alertmanagerSpec:
+              nodeSelector:
+                openlex.dev/workload: observability
+              tolerations:
+                - key: openlex.dev/workload
+                  operator: Equal
+                  value: observability
+                  effect: NoSchedule
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits: { cpu: 100m, memory: 64Mi }
+          grafana:
+            nodeSelector:
+              openlex.dev/workload: observability
+            tolerations:
+              - key: openlex.dev/workload
+                operator: Equal
+                value: observability
+                effect: NoSchedule
+            resources:
+              requests: { cpu: 50m, memory: 256Mi }
+              limits: { cpu: 300m, memory: 768Mi }
+            additionalDataSources:
+              - name: Tempo
+                uid: tempo
+                type: tempo
+                access: proxy
+                url: http://tempo.observability.svc.cluster.local:3200
+                isDefault: false
+                jsonData:
+                  serviceMap:
+                    datasourceUid: prometheus
+              - name: Jaeger
+                uid: jaeger
+                type: jaeger
+                access: proxy
+                url: http://jaeger.observability.svc.cluster.local:16686
+                isDefault: false
+              - name: Loki
+                uid: loki
+                type: loki
+                access: proxy
+                url: http://loki.observability.svc.cluster.local:3100
+                isDefault: false
+          kube-state-metrics:
+            nodeSelector:
+              openlex.dev/workload: observability
+            tolerations:
+              - key: openlex.dev/workload
+                operator: Equal
+                value: observability
+                effect: NoSchedule
+            resources:
+              requests: { cpu: 10m, memory: 32Mi }
+              limits: { cpu: 50m, memory: 64Mi }
+          prometheus-node-exporter:
+            # Blanket toleration (not scoped to the observability taint alone) so this
+            # DaemonSet also schedules on the control-plane and apps node groups -- same
+            # reasoning as kind's own file (a scoped-only toleration here previously caused a
+            # live bug on kind where node-exporter silently missed the control-plane node,
+            # since Helm values arrays replace rather than merge with the chart default).
+            tolerations:
+              - effect: NoSchedule
+                operator: Exists
+            resources:
+              requests: { cpu: 10m, memory: 24Mi }
+              limits: { cpu: 50m, memory: 48Mi }
+    - repoURL: https://github.com/rozdolsky33/OpenLex.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+```
+
+- [ ] **Step 3: Write the observability-dashboards Application**
+
+Read `infra/argocd/apps/kind/app-observability-dashboards.yaml` first — this one needs zero
+content changes at all beyond `project`/`targetRevision`, since
+`infra/monitoring/grafana/dashboards/` is already environment-agnostic PromQL/LogQL/TraceQL
+JSON, consumed via Kustomize (not Helm), so there's no `$values` multi-source pattern to adapt:
+
+```yaml
+# infra/argocd/apps/eks-demo/app-observability-dashboards.yaml
+#
+# Identical to infra/argocd/apps/kind/app-observability-dashboards.yaml. The dashboard JSON
+# itself (infra/monitoring/grafana/dashboards/) needs zero eks-demo-specific changes -- it's
+# PromQL/LogQL/TraceQL querying Prometheus/Loki/Tempo by Service DNS name, and eks-demo's
+# Tempo/Jaeger/Loki/Prometheus resolve at those same names (Tasks 6/7/8's Applications all
+# live in the same `observability` namespace kind uses). This is what resolves the original
+# 7.6 draft's open question about needing parallel CloudWatch-flavored dashboards -- moot,
+# since eks-demo never queries CloudWatch at all under this revised design.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: observability-dashboards
+  namespace: argocd
+spec:
+  project: openlex-eks-demo
+  source:
+    repoURL: https://github.com/rozdolsky33/OpenLex.git
+    targetRevision: main
+    path: infra/monitoring/grafana/dashboards
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+```
+
+- [ ] **Step 4: Validate**
+
+```bash
+diff <(grep -v "^apiVersion: argoproj" infra/argocd/apps/kind/app-kube-prometheus-stack.yaml) <(grep -v "^apiVersion: argoproj" infra/argocd/apps/eks-demo/app-kube-prometheus-stack.yaml)
+diff infra/argocd/apps/kind/app-observability-dashboards.yaml infra/argocd/apps/eks-demo/app-observability-dashboards.yaml
+```
+
+Expected: only header comment/`project`/`targetRevision` differ in both files — confirm no
+other line drifted (this is the largest mirrored file; a missed line here is easy to miss by
+eye alone, which is why this diff check matters more here than anywhere else in Task 6-8).
+
+```bash
+python3 -c "import yaml; [yaml.safe_load(open(f)) for f in ['infra/argocd/apps/eks-demo/app-kube-prometheus-stack.yaml','infra/argocd/apps/eks-demo/app-observability-dashboards.yaml']]" && echo OK
+```
+
+Expected: `OK`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add infra/argocd/apps/eks-demo/app-kube-prometheus-stack.yaml infra/argocd/apps/eks-demo/app-observability-dashboards.yaml infra/argocd/projects/appproject-eks-demo.yaml
+git commit -m "Mirror kind's kube-prometheus-stack + dashboards onto eks-demo (7.6 revised)"
+```
+
+---
+
+### Task 9: Observability — postgres-exporter retargeted at RDS (7.6 revised)
+
+**Files:**
+- Create: `infra/argocd/apps/eks-demo/app-postgres-exporter.yaml`
+
+**Interfaces:**
+- Consumes: `POSTGRES_EXPORTER_DSN` key in the `openlex-secrets` k8s Secret (Task 1's
+  `aws_secretsmanager_secret_version.app`, flowing through `externalsecret-openlex.yaml`'s
+  `dataFrom.extract`, confirmed automatic by Task 3), `openlex.dev/workload: apps` taint/label
+  (Task 4), `prometheus-community.github.io/helm-charts` (already in the AppProject from Task
+  8).
+- Produces: nothing consumed by a later task — Prometheus (Task 8) discovers it automatically
+  via its chart-native `serviceMonitor.enabled: true`, no manual wiring needed.
+
+**Files:**
+- Create: `infra/argocd/apps/eks-demo/app-postgres-exporter.yaml`
+
+- [ ] **Step 1: Write the Application**
+
+Read `infra/argocd/apps/kind/app-postgres-exporter.yaml` first. The chart/values are identical
+(the shared `infra/monitoring/postgres-exporter/values-base.yaml` already points
+`config.datasourceSecret` at `openlex-secrets`/`POSTGRES_EXPORTER_DSN` — the same Secret name
+and key on both environments, just sourced differently upstream: kind's `.env`-derived vs.
+Task 1's RDS-derived). Only `project`/`targetRevision` and the `nodeSelector` differ from
+kind's file — this one lives in the `openlex` namespace, on the `apps` node group, not
+`observability`, matching kind's own placement rationale (it reads the same
+`openlex`-namespace Secret the app itself uses):
+
+```yaml
+# infra/argocd/apps/eks-demo/app-postgres-exporter.yaml
+#
+# Identical to infra/argocd/apps/kind/app-postgres-exporter.yaml. config.datasourceSecret
+# (in the shared values-base.yaml) points at the same openlex-secrets/POSTGRES_EXPORTER_DSN
+# key kind uses -- here it resolves to RDS (Task 1's rds.tf writes that key), not the
+# in-cluster StatefulSet kind's key resolves to. Deliberately not in the `observability`
+# namespace (same as kind): Prometheus already watches ServiceMonitors across every namespace
+# (serviceMonitorSelectorNilUsesHelmValues: false, in the shared kube-prometheus-stack
+# values-base.yaml), so this doesn't need to live in `observability` to be scraped, and
+# staying in `openlex` avoids duplicating DB credentials into a second namespace.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgres-exporter
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: openlex-eks-demo
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: prometheus-postgres-exporter
+      targetRevision: "8.1.1"
+      helm:
+        valueFiles:
+          - $values/infra/monitoring/postgres-exporter/values-base.yaml
+        valuesObject:
+          nodeSelector:
+            openlex.dev/workload: apps
+    - repoURL: https://github.com/rozdolsky33/OpenLex.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openlex
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+```
+
+- [ ] **Step 2: Validate**
+
+```bash
+diff <(grep -v "^apiVersion: argoproj" infra/argocd/apps/kind/app-postgres-exporter.yaml) <(grep -v "^apiVersion: argoproj" infra/argocd/apps/eks-demo/app-postgres-exporter.yaml)
+python3 -c "import yaml; yaml.safe_load(open('infra/argocd/apps/eks-demo/app-postgres-exporter.yaml'))" && echo OK
+```
+
+Expected: only header comment/`project`/`targetRevision` differ; `OK` printed.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add infra/argocd/apps/eks-demo/app-postgres-exporter.yaml
+git commit -m "Mirror kind's postgres-exporter onto eks-demo, retargeted at RDS (7.6 revised)"
+```
+
+---
+
+### Task 10: Ingress + oauth2-proxy for Grafana; port-forward script for Prometheus/Jaeger (7.9 revised)
+
+**Files:**
+- Create: `infra/argocd/apps/eks-demo/{app-oauth2-proxy.yaml,
+  externalsecret-oauth2-proxy.yaml,ingress-grafana.yaml}`,
+  `scripts/eks-demo-observability-port-forward.sh`
 - Modify: `infra/argocd/projects/appproject-eks-demo.yaml`, `infra/terraform/README.md`
 
 **Interfaces:**
-- Consumes: the `grafana` Service on port `80` (Task 8), the `aws-secrets-manager`
-  `ClusterSecretStore` (exists today, `infra/argocd/apps/eks-demo/secretstore-aws.yaml`).
+- Consumes: `openlex.dev/workload: observability` taint/label (Task 4), the
+  `kube-prometheus-stack-grafana` Service on port `80`, the
+  `kube-prometheus-stack-prometheus` Service on port `9090`, the
+  `kube-prometheus-stack-alertmanager` Service on port `9093` (all Task 8), the `jaeger`
+  Service on port `16686` (Task 6), the `aws-secrets-manager` `ClusterSecretStore` (exists
+  today, `infra/argocd/apps/eks-demo/secretstore-aws.yaml`).
 - Produces: nothing consumed by a later task.
 
-Per the plan's "Note on resolving a real spec ambiguity" at the top of this document: this
-task gates **Grafana only**. Prometheus and Jaeger do not exist as self-hosted `eks-demo`
-services under 7.6's AWS-native design, so there is nothing else to put an Ingress in front of.
-ArgoCD is explicitly excluded (keeps its own native login) per the Global Constraints.
+Per the design spec's revised 7.9: Grafana (plus ArgoCD's own existing login) gets real
+internet-facing exposure. Prometheus and Jaeger get **no Ingress at all** — the port-forward
+script is their only access path, mirroring `scripts/observability-port-forward.sh`'s existing
+pattern for kind (not touching that file — a brand-new file, per 7.3's isolation discipline).
 
 - [ ] **Step 1: Add the oauth2-proxy chart repo to the AppProject**
 
@@ -1714,20 +1792,17 @@ spec:
 ```yaml
 # infra/argocd/apps/eks-demo/app-oauth2-proxy.yaml
 #
-# Gates Grafana behind a single login (7.9's design, scope-narrowed per this plan's "Note on
-# resolving a real spec ambiguity" — Prometheus/Jaeger no longer exist as self-hosted
-# eks-demo services; ArgoCD explicitly excluded, keeps its own native login). GitHub OAuth
-# chosen over a static htpasswd-style provider (spec's own open question, resolved here):
-# oauth2-proxy's htpasswd support is a secondary/basic-auth fallback, not designed as a
-# standalone primary provider, and GitHub OAuth is both the more realistic cloud-native
-# pattern and a natural fit for a project that already lives on GitHub. Requires a GitHub
-# OAuth App registered by hand (Settings -> Developer settings -> OAuth Apps -> New OAuth App,
-# callback URL https://grafana.<DOMAIN>/oauth2/callback) — a manual one-time step in the same
-# category as this project's other documented manual bootstrap steps (Route53 nameservers,
-# Secrets Manager seed values). `<GITHUB_USERNAME>` restricts access to a single operator
-# (replace with your own GitHub username) -- without it, any GitHub-authenticated user could
-# log in. Client ID/secret/cookie secret come from externalsecret-oauth2-proxy.yaml, never
-# committed here.
+# Gates Grafana behind a single login (7.9 revised). GitHub OAuth chosen over a static
+# htpasswd-style provider (spec's own open question, resolved here): oauth2-proxy's htpasswd
+# support is a secondary/basic-auth fallback, not designed as a standalone primary provider,
+# and GitHub OAuth is both the more realistic cloud-native pattern and a natural fit for a
+# project that already lives on GitHub. Requires a GitHub OAuth App registered by hand
+# (Settings -> Developer settings -> OAuth Apps -> New OAuth App, callback URL
+# https://grafana.<DOMAIN>/oauth2/callback) — a manual one-time step in the same category as
+# this project's other documented manual bootstrap steps (Route53 nameservers, Secrets Manager
+# seed values). `<GITHUB_USERNAME>` restricts access to a single operator (replace with your
+# own GitHub username) -- without it, any GitHub-authenticated user could log in. Client
+# ID/secret/cookie secret come from externalsecret-oauth2-proxy.yaml, never committed here.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -1754,6 +1829,13 @@ spec:
           cookie-secure: "true"
           cookie-samesite: "lax"
           set-xauthrequest: "true"
+        nodeSelector:
+          openlex.dev/workload: observability
+        tolerations:
+          - key: openlex.dev/workload
+            operator: Equal
+            value: observability
+            effect: NoSchedule
         resources:
           requests: { cpu: 25m, memory: 32Mi }
           limits: { cpu: 100m, memory: 64Mi }
@@ -1775,7 +1857,8 @@ spec:
 #
 # nginx.ingress.kubernetes.io/auth-url + auth-signin gate access via oauth2-proxy
 # (app-oauth2-proxy.yaml) -- the standard, documented ingress-nginx + oauth2-proxy
-# integration pattern. Lives here, not infra/kubernetes/overlays/eks-demo/, for the same
+# integration pattern. Targets kube-prometheus-stack-grafana (Task 8's bundled Grafana, not a
+# standalone chart). Lives here, not infra/kubernetes/overlays/eks-demo/, for the same
 # namespace-transformer reason as externalsecret-oauth2-proxy.yaml above. Replace <DOMAIN>
 # with the real demo domain.
 apiVersion: networking.k8s.io/v1
@@ -1810,12 +1893,68 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: grafana
+                name: kube-prometheus-stack-grafana
                 port:
                   number: 80
 ```
 
-- [ ] **Step 5: Update README.md's setup sequence**
+- [ ] **Step 5: Write the port-forward script for Prometheus/Jaeger (and Grafana/Alertmanager/ArgoCD for convenience)**
+
+```bash
+#!/usr/bin/env bash
+# scripts/eks-demo-observability-port-forward.sh
+#
+# Prometheus and Jaeger have no built-in authentication and get no Ingress on eks-demo (see
+# infra/argocd/apps/eks-demo/ingress-grafana.yaml's header comment and the design spec's
+# revised 7.9) -- this is their only access path, mirroring
+# scripts/observability-port-forward.sh's existing pattern for kind service-for-service. A
+# brand-new file, not an extension of that script -- 7.3's isolation discipline means
+# kind-only files never gain eks-demo-specific logic. Requires a kubeconfig context already
+# pointed at the eks-demo cluster (`aws eks update-kubeconfig --name <cluster_name> --region
+# <region>`, see infra/terraform/README.md's setup sequence) -- unlike kind's script, this
+# doesn't assume it's the only cluster in your kubeconfig, so double-check your current
+# context before running this.
+set -euo pipefail
+
+NAMESPACE="observability"
+ARGOCD_NAMESPACE="argocd"
+
+pids=()
+cleanup() {
+  echo
+  echo "Stopping port-forwards..."
+  for pid in "${pids[@]}"; do
+    kill "${pid}" 2>/dev/null || true
+  done
+}
+trap cleanup EXIT INT TERM
+
+kubectl port-forward -n "${NAMESPACE}" svc/kube-prometheus-stack-grafana 3000:80 &
+pids+=($!)
+kubectl port-forward -n "${NAMESPACE}" svc/kube-prometheus-stack-prometheus 9090:9090 &
+pids+=($!)
+kubectl port-forward -n "${NAMESPACE}" svc/kube-prometheus-stack-alertmanager 9093:9093 &
+pids+=($!)
+kubectl port-forward -n "${NAMESPACE}" svc/jaeger 16686:16686 &
+pids+=($!)
+kubectl port-forward -n "${ARGOCD_NAMESPACE}" svc/argocd-server 8080:443 &
+pids+=($!)
+
+echo "Grafana:      http://localhost:3000  (admin password: kubectl -n ${NAMESPACE} get secret kube-prometheus-stack-grafana -o jsonpath='{.data.admin-password}' | base64 -d)"
+echo "Prometheus:   http://localhost:9090  (no auth -- port-forward only, see this script's header comment)"
+echo "Alertmanager: http://localhost:9093"
+echo "Jaeger:       http://localhost:16686  (no auth -- port-forward only, see this script's header comment)"
+echo "ArgoCD:       https://localhost:8080  (admin password: kubectl -n ${ARGOCD_NAMESPACE} get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d, or the openlex/argocd-admin Secrets Manager password if already rotated)"
+echo
+echo "Press Ctrl-C to stop all port-forwards."
+wait
+```
+
+```bash
+chmod +x scripts/eks-demo-observability-port-forward.sh
+```
+
+- [ ] **Step 6: Update README.md's setup sequence**
 
 Edit `infra/terraform/README.md`'s step 5 (from Task 1's version) to add, after the existing
 `openlex/app`/`openlex/argocd-admin` bullets:
@@ -1826,33 +1965,40 @@ Edit `infra/terraform/README.md`'s step 5 (from Task 1's version) to add, after 
    `infra/argocd/apps/eks-demo/app-oauth2-proxy.yaml`'s header comment for the exact steps).
 ```
 
-- [ ] **Step 6: Cross-check the integration against oauth2-proxy's own docs**
+- [ ] **Step 7: Cross-check the integration against oauth2-proxy's own docs**
 
 `WebFetch` `https://oauth2-proxy.github.io/oauth2-proxy/configuration/overview` and
 `.../configuration/providers/github`. Confirm `upstreams: static://202` is the documented
 auth-only-mode idiom, and that `provider: github` + `github-user` is the correct flag for
 restricting to a single GitHub user. Record what was checked in the task report.
 
-- [ ] **Step 7: Validate the Ingress YAML syntax**
+- [ ] **Step 8: Validate the new YAML/script**
 
 ```bash
 python3 -c "import yaml; list(yaml.safe_load_all(open('infra/argocd/apps/eks-demo/ingress-grafana.yaml')))" && echo OK
 python3 -c "import yaml; list(yaml.safe_load_all(open('infra/argocd/apps/eks-demo/app-oauth2-proxy.yaml')))" && echo OK
 python3 -c "import yaml; list(yaml.safe_load_all(open('infra/argocd/apps/eks-demo/externalsecret-oauth2-proxy.yaml')))" && echo OK
+bash -n scripts/eks-demo-observability-port-forward.sh && echo "script syntax OK"
+diff <(grep -vE "^#|^NAMESPACE=\"observability\"$" scripts/observability-port-forward.sh) <(grep -vE "^#|^NAMESPACE=\"observability\"$" scripts/eks-demo-observability-port-forward.sh) || true
 ```
 
-Expected: `OK` printed 3 times, no exceptions.
+Expected: `OK` printed 3 times, `script syntax OK`, and the final `diff` (informational, not a
+strict pass/fail — `|| true` keeps it non-blocking) showing only the expected differences:
+`cd "$(dirname...")/.."`'s removal (see the script's header comment on kubeconfig context),
+the dropped OTLP/HTTP line (kind's script forwards the collector for `apps/web`'s browser
+tracing; this plan's OTel Collector Application doesn't need the same local port-forward use
+case documented here), and the updated echo text.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add infra/argocd/apps/eks-demo/app-oauth2-proxy.yaml infra/argocd/apps/eks-demo/externalsecret-oauth2-proxy.yaml infra/argocd/apps/eks-demo/ingress-grafana.yaml infra/argocd/projects/appproject-eks-demo.yaml infra/terraform/README.md
-git commit -m "Add oauth2-proxy + Ingress gating Grafana for eks-demo (7.9)"
+git add infra/argocd/apps/eks-demo/app-oauth2-proxy.yaml infra/argocd/apps/eks-demo/externalsecret-oauth2-proxy.yaml infra/argocd/apps/eks-demo/ingress-grafana.yaml infra/argocd/projects/appproject-eks-demo.yaml infra/terraform/README.md scripts/eks-demo-observability-port-forward.sh
+git commit -m "Add oauth2-proxy + Ingress for Grafana, port-forward script for Prometheus/Jaeger (7.9 revised)"
 ```
 
 ---
 
-### Task 10: Static CDN — Terraform: S3 + CloudFront + ACM + GitHub OIDC role (7.8b)
+### Task 11: Static CDN — Terraform: S3 + CloudFront + ACM + GitHub OIDC role (7.8b)
 
 **Files:**
 - Create: `infra/terraform/static-site.tf`, `infra/terraform/iam_oidc_github_actions.tf`
@@ -1864,7 +2010,7 @@ git commit -m "Add oauth2-proxy + Ingress gating Grafana for eks-demo (7.9)"
 - Consumes: `aws_route53_zone.demo` (`infra/terraform/route53.tf`, exists today),
   `var.domain_name` (exists today).
 - Produces: `aws_s3_bucket.web`, `aws_cloudfront_distribution.web`,
-  `aws_iam_role.github_actions_deploy_web.arn` — all three consumed by Task 11's
+  `aws_iam_role.github_actions_deploy_web.arn` — all three consumed by Task 12's
   `deploy-static.yml` (as `terraform output web_bucket_name`, `cloudfront_distribution_id`,
   `github_actions_deploy_web_role_arn`, hand-copied into GitHub Actions repository variables).
 
@@ -2041,7 +2187,7 @@ resource "aws_cloudfront_distribution" "web" {
 
   default_cache_behavior {
     allowed_methods         = ["GET", "HEAD"]
-    cached_methods           = ["GET", "HEAD"]
+    cached_methods          = ["GET", "HEAD"]
     target_origin_id        = "web-s3"
     viewer_protocol_policy  = "redirect-to-https"
     cache_policy_id         = "658327ea-f89d-4fab-a63d-7e88639e58f6" # AWS-managed "CachingOptimized" policy
@@ -2092,7 +2238,7 @@ resource "aws_route53_record" "app" {
 ```hcl
 # infra/terraform/iam_oidc_github_actions.tf
 #
-# Lets .github/workflows/deploy-static.yml (Task 11) authenticate to AWS via GitHub's OIDC
+# Lets .github/workflows/deploy-static.yml (Task 12) authenticate to AWS via GitHub's OIDC
 # federation -- no static AWS access keys in GitHub secrets, matching this project's "no
 # static cloud credentials" precedent (IRSA everywhere else). Assumes no GitHub Actions OIDC
 # provider already exists in this AWS account -- this project's own AWS account has never had
@@ -2251,7 +2397,7 @@ git commit -m "Add S3 + CloudFront static hosting for apps/web, GitHub OIDC depl
 
 ---
 
-### Task 11: Static CDN — apps/web production build + deploy-static.yml (7.8a + 7.8c)
+### Task 12: Static CDN — apps/web production build + deploy-static.yml (7.8a + 7.8c)
 
 **Files:**
 - Create: `.github/workflows/deploy-static.yml`
@@ -2260,7 +2406,7 @@ git commit -m "Add S3 + CloudFront static hosting for apps/web, GitHub OIDC depl
 **Interfaces:**
 - Consumes: `apps/web`'s existing `npm run build` script (`package.json`, unchanged — already
   produces a real `dist/`, confirmed working during this plan's own research, see Step 1),
-  Task 10's `web_bucket_name`/`cloudfront_distribution_id`/`github_actions_deploy_web_role_arn`
+  Task 11's `web_bucket_name`/`cloudfront_distribution_id`/`github_actions_deploy_web_role_arn`
   outputs.
 - Produces: nothing consumed by a later task.
 
@@ -2386,7 +2532,7 @@ git commit -m "Add deploy-static.yml: apps/web production build to S3 + CloudFro
 
 ---
 
-### Task 12: Terraform remote state (7.4)
+### Task 13: Terraform remote state (7.4)
 
 **Files:**
 - Modify: `infra/terraform/backend.tf`, `infra/terraform/README.md`, `.gitignore`
@@ -2540,21 +2686,31 @@ real AWS resources, not even an optional one" constraint), not a stylistic nit.
 
 ## Self-Review
 
-**Spec coverage:** 7.1 → Tasks 1-2. 7.2 → Task 3. 7.3 → final-review check above (no
-dedicated task, by design — no new code). 7.4 → Task 12. 7.5 → folded into Task 1's
-`aws_db_instance` backup arguments. 7.6 → Tasks 6-8. 7.7 → Tasks 4-5. 7.8 → Tasks 10-11. 7.9 →
-Task 9.
+**Spec coverage:** 7.1 → Tasks 1-2. 7.2 → Task 3. 7.3 → final-review check above (no dedicated
+task, by design — no new code). 7.4 → Task 13. 7.5 → folded into Task 1's `aws_db_instance`
+backup arguments. 7.6 (revised) → Tasks 6-9. 7.7 → Tasks 4-5. 7.8 → Tasks 11-12. 7.9 (revised)
+→ Task 10.
 
-**Placeholder scan:** no TBD/TODO markers; the two `<PLACEHOLDER>` conventions used
-(`<DOMAIN>`, `<GITHUB_USERNAME>`, `<*_ROLE_ARN>`) are the project's own established, real
-convention for values a human hand-copies after `terraform apply` or hand-registers externally
-(e.g. `<ACME_EMAIL>` in the existing `clusterissuer-letsencrypt.yaml`) — not unresolved plan
-gaps.
+**Placeholder scan:** no TBD/TODO markers; the `<PLACEHOLDER>` conventions used (`<DOMAIN>`,
+`<GITHUB_USERNAME>`, `<*_ROLE_ARN>`) are the project's own established, real convention for
+values a human hand-copies after `terraform apply` or hand-registers externally (e.g.
+`<ACME_EMAIL>` in the existing `clusterissuer-letsencrypt.yaml`) — not unresolved plan gaps.
 
 **Type/naming consistency:** `openlex.dev/workload` taint/label key and `observability`/`apps`
-values are identical across Tasks 4, 5, 6, 7, 8 and kind's existing files (verified by Task 5
-Step 5's `grep`). Secret/ServiceAccount names referenced across Terraform (`iam_irsa_*.tf`) and
-ArgoCD (`app-*.yaml`) match 1:1: `otel-collector`/`observability`, `aws-for-fluent-bit`/
-`observability`, `grafana`/`observability`, `ebs-csi-controller-sa`/`kube-system`. `DATABASE_URL`
-scheme (`postgresql+asyncpg://`) is consistent between Task 1's `rds.tf` and Task 2's
-`job.yaml` (which explicitly strips `+asyncpg` before handing the URL to `psql`).
+values are identical across Tasks 4, 5, 6, 7, 8, 9 and kind's existing files (verified by Task
+5 Step 5's `grep` and Tasks 6-9's own `diff`-against-kind steps). `POSTGRES_EXPORTER_DSN` key
+name is consistent between Task 1's `rds.tf` (which writes it) and the shared
+`infra/monitoring/postgres-exporter/values-base.yaml` (which reads it via
+`config.datasourceSecret.key` — unchanged by this plan, already correct). `DATABASE_URL` scheme
+(`postgresql+asyncpg://`) is consistent between Task 1's `rds.tf` and Task 2's `job.yaml` (which
+explicitly strips `+asyncpg` before handing the URL to `psql`). Service names Task 10's Ingress/
+port-forward script depend on (`kube-prometheus-stack-grafana`, `kube-prometheus-stack-
+prometheus`, `kube-prometheus-stack-alertmanager`, `jaeger`) all trace back to Task 6/8's
+Application `metadata.name` values via each chart's default fullname templating — verified
+against `scripts/observability-port-forward.sh`'s existing, live-proven service names for kind
+(the same charts, same naming convention).
+
+**No IAM/IRSA left over from the pre-revision design:** Tasks 6-9 (observability) contain zero
+`.tf` files and zero `outputs.tf`/README hand-copy steps — confirmed by this plan's own File
+Structure section listing only ArgoCD/Kubernetes YAML for those four tasks. This is a deliberate
+consequence of the self-hosted design (see "Note on the 7.6/7.9 revision"), not an oversight.
