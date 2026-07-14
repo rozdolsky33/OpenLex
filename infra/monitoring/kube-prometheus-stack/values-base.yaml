@@ -42,6 +42,79 @@ grafana:
 
 alertmanager:
   enabled: true
+  # No custom config.{} override here -- the chart's own default Alertmanager config already
+  # routes every alert with no more-specific match to a "null" receiver (verified live via
+  # `helm template`: route.receiver: "null", the top-level default), which is exactly what
+  # the design doc calls for this pass ("page* routed to a null/log receiver for now --
+  # visible in the Alertmanager UI, structured so a real Slack/PagerDuty receiver can be
+  # swapped in later without touching rule definitions"). Nothing to add until a real
+  # receiver is wired up.
+
+# GA readiness checklist item 3.11 -- the five symptom-based alerts sketched in
+# docs/superpowers/specs/2026-07-12-production-observability-design.md's "Golden-signal SLOs
+# and alerting" section. additionalPrometheusRulesMap (not a standalone PrometheusRule
+# manifest applied via kustomize, unlike the dashboard ConfigMaps) specifically so the
+# generated PrometheusRule carries this chart's own release label automatically --
+# ruleSelectorNilUsesHelmValues defaults to true (verified via `helm show values`), meaning
+# Prometheus only watches PrometheusRules matching that label; a rule applied outside this
+# values-driven mechanism would need the same ruleSelector: {} override this file already
+# needed for ServiceMonitors, and this avoids that extra surface entirely.
+#
+# All five thresholds are explicit initial guesses, not derived from real production traffic
+# -- same honesty as the design doc's own SLO targets. Revisit once there's real usage data.
+# Every expression was live-verified against this cluster's actual running Prometheus before
+# being committed (not just assumed to parse).
+additionalPrometheusRulesMap:
+  openlex-symptom-alerts:
+    groups:
+      - name: openlex.rules
+        rules:
+          - alert: HighErrorRate
+            expr: |
+              sum(rate(openlex_http_requests_total{route=~"/query|/auth.*",status_class="5xx"}[5m]))
+              / sum(rate(openlex_http_requests_total{route=~"/query|/auth.*"}[5m])) > 0.05
+            for: 2m
+            labels:
+              severity: page
+            annotations:
+              summary: "OpenLex /query+/auth error rate above 5%"
+              description: "{{ $value | humanizePercentage }} of /query and /auth.* requests have failed (5xx) over the last 5m."
+          - alert: ElevatedErrorRate
+            expr: |
+              sum(rate(openlex_http_requests_total{route=~"/query|/auth.*",status_class="5xx"}[15m]))
+              / sum(rate(openlex_http_requests_total{route=~"/query|/auth.*"}[15m])) > 0.01
+            for: 15m
+            labels:
+              severity: ticket
+            annotations:
+              summary: "OpenLex /query+/auth error rate above 1%"
+              description: "{{ $value | humanizePercentage }} of /query and /auth.* requests have failed (5xx) over the last 15m."
+          - alert: QueryLatencyP99High
+            expr: |
+              histogram_quantile(0.99, sum by (le) (rate(openlex_http_request_duration_seconds_bucket{route="/query"}[5m]))) > 6
+            for: 10m
+            labels:
+              severity: ticket
+            annotations:
+              summary: "OpenLex /query p99 latency above 6s"
+              description: "/query p99 latency has been above 6s for 10m (current: {{ $value | humanizeDuration }})."
+          - alert: QuotaBurnRate
+            expr: |
+              sum by (tier) (increase(openlex_query_quota_exceeded_total[15m])) > 5
+            labels:
+              severity: ticket
+            annotations:
+              summary: "OpenLex tier {{ $labels.tier }} hitting its quota repeatedly"
+              description: "{{ $value }} requests were rejected for quota exhaustion on tier {{ $labels.tier }} in the last 15m."
+          - alert: PostgresConnectionSaturation
+            expr: |
+              sum(pg_stat_database_numbackends) / pg_settings_max_connections > 0.8
+            for: 5m
+            labels:
+              severity: ticket
+            annotations:
+              summary: "Postgres connection count near max_connections"
+              description: "Postgres is using {{ $value | humanizePercentage }} of max_connections for 5m."
 
 prometheus:
   prometheusSpec:
