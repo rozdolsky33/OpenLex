@@ -14,4 +14,9 @@ fi
 
 # -m evaluation overrides the root pyproject.toml's default "-m 'not evaluation'" (this suite
 # is excluded from the default `uv run pytest` run since it costs real API calls).
-uv run --package openlex-api pytest tests/evaluation -v -m evaluation
+# -x (fail-fast): stop at the first genuine failure instead of burning the rest of the run's
+# real Anthropic spend on a pass that's already going red. Safe to combine with the suite's
+# known_gap_reason/xfail questions (see golden_questions.yaml) -- xfail results don't count as
+# failures for -x's purposes, so a documented, already-understood gap can't perpetually block
+# every run at the same spot; only a genuinely new failure trips it.
+uv run --package openlex-api pytest tests/evaluation -v -m evaluation -x

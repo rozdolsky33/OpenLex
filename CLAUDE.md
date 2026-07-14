@@ -16,9 +16,10 @@ mapping of where the old `backend/`/`frontend/` code moved to.
 
 ## Why this project exists — read before scoping any work
 
-OpenLex is a portfolio POC built for a specific job interview: an SRE/Platform Engineer role
-at Legara AI (AI-for-lawyers), for a greenfield NY team. It is **not** headed for a real GA
-launch. This changes what "done" means for different parts of the repo:
+OpenLex is a portfolio POC demonstrating SRE/Platform Engineering skills applied to an
+AI-powered product — here, a legal-tech RAG system for a hypothetical greenfield team. It is
+**not** headed for a real GA launch. This changes what "done" means for different parts of
+the repo:
 
 - **Legal content (statute/case-law corpus, ToS/privacy copy, eval question coverage) only
   needs to be *credible*, not *complete*.** Enough breadth to demonstrate real hybrid
