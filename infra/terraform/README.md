@@ -68,6 +68,39 @@ Local state by default (see `backend.tf`) — reasonable for a demo cluster you 
 recreate between sessions (the cheapest way to run EKS, since the control plane bills hourly
 regardless of workload). Switch to an S3+DynamoDB backend once that stops being true.
 
+## Remote state
+
+`backend.tf` is configured for an S3 backend, but the bucket/key/region/table values are
+supplied separately (Terraform backend blocks can't reference variables or `terraform.tfvars`
+at all) via `-backend-config`. One-time bootstrap, before the very first `terraform init` on a
+fresh AWS account (an S3 bucket + DynamoDB table can't be created by the same Terraform config
+that needs them to exist first):
+
+```bash
+aws s3api create-bucket --bucket <your-tfstate-bucket> --region us-east-1
+aws s3api put-bucket-versioning --bucket <your-tfstate-bucket> --versioning-configuration Status=Enabled
+aws s3api put-bucket-encryption --bucket <your-tfstate-bucket> --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+aws dynamodb create-table \
+  --table-name <your-tflock-table> \
+  --attribute-definitions AttributeName=LockID,AttributeType=S \
+  --key-schema AttributeName=LockID,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST
+```
+
+Then:
+
+```bash
+cp backend.hcl.example backend.hcl
+# edit backend.hcl: real bucket/table names
+terraform init -backend-config=backend.hcl -migrate-state
+```
+
+**Do this before or alongside the first real `terraform apply` of `rds.tf`** — a real
+`aws_db_instance` password ends up in Terraform state via `random_password`/
+`aws_secretsmanager_secret_version`, which makes that state file itself sensitive; remote state
+(S3 with encryption + restricted IAM access) is meaningfully safer than a local state file on a
+laptop for that reason, not just a "more than one person touches this" convenience upgrade.
+
 ## Teardown
 
 `terraform destroy` when you're done with the demo. This is what actually stops the EKS
