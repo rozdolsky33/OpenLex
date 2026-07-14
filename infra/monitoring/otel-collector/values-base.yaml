@@ -27,6 +27,15 @@ config:
           endpoint: 0.0.0.0:4317
         http:
           endpoint: 0.0.0.0:4318
+          # apps/web's browser tracing (see apps/web/src/telemetry.ts) POSTs OTLP/HTTP spans
+          # directly from the browser to this receiver -- a cross-origin request (the web UI
+          # runs on localhost:5173, this receiver on localhost:4318, both via
+          # scripts/observability-port-forward.sh / scripts/app-port-forward.sh), which
+          # browsers block by default without an explicit CORS allowlist. Matches
+          # openlex_shared.config's cors_allow_origins default for the same origin.
+          cors:
+            allowed_origins:
+              - "http://localhost:5173"
   processors:
     batch: {}
   exporters:
