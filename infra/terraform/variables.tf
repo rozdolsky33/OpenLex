@@ -42,3 +42,33 @@ variable "secrets_manager_path_prefix" {
   type        = string
   default     = "openlex"
 }
+
+variable "db_instance_class" {
+  description = "RDS instance class -- Graviton, matches this repo's cost-conscious node-type precedent"
+  type        = string
+  default     = "db.t4g.micro"
+}
+
+variable "db_allocated_storage" {
+  description = "RDS allocated storage in GB (gp3)"
+  type        = number
+  default     = 20
+}
+
+variable "db_backup_retention_days" {
+  description = "RDS automated backup retention period, in days"
+  type        = number
+  default     = 7
+}
+
+variable "db_name" {
+  description = "Database name inside the RDS instance -- matches local dev's docker-compose convention"
+  type        = string
+  default     = "openlex"
+}
+
+variable "db_username" {
+  description = "Master username for the RDS instance -- matches local dev's docker-compose convention"
+  type        = string
+  default     = "openlex"
+}

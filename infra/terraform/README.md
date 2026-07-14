@@ -23,9 +23,20 @@ Local `kind` needs none of this — it's local-only, no AWS involved.
    annotations and `infra/kubernetes/overlays/eks-demo/kustomization.yaml`'s `images:` block.
    This is the one place a Terraform output has to flow into a Git-committed manifest by hand —
    an accepted GitOps-purity gap (same category as `kind`'s manual secret bootstrap).
-5. Create the AWS Secrets Manager secrets `external-secrets` will read (`openlex/app`,
-   `openlex/argocd-admin`) — see `infra/argocd/apps/eks-demo/argocd-admin-externalsecret.yaml`
-   for the exact shape expected.
+5. `terraform apply` already created `openlex/app` with `DATABASE_URL` and
+   `POSTGRES_EXPORTER_DSN` keys (see `rds.tf`). Merge in the remaining keys it needs
+   (`ANTHROPIC_API_KEY`, `NY_OPEN_LEG_API_KEY`, `JWT_SECRET_KEY`, `DEMO_*`) — Terraform
+   deliberately never touches this secret's value again after its first write (see `rds.tf`'s
+   `ignore_changes` comment), so this merge is safe to do once and durable:
+   ```bash
+   aws secretsmanager get-secret-value --secret-id openlex/app --query SecretString --output text > /tmp/openlex-app.json
+   # edit /tmp/openlex-app.json: add ANTHROPIC_API_KEY, NY_OPEN_LEG_API_KEY, JWT_SECRET_KEY,
+   # DEMO_* alongside the existing DATABASE_URL key
+   aws secretsmanager put-secret-value --secret-id openlex/app --secret-string file:///tmp/openlex-app.json
+   rm /tmp/openlex-app.json
+   ```
+   Separately, create `openlex/argocd-admin` by hand (unchanged) — see
+   `infra/argocd/apps/eks-demo/argocd-admin-externalsecret.yaml` for the exact shape expected.
 6. `aws eks update-kubeconfig --name <cluster_name> --region <region>`, then run
    `scripts/argocd-bootstrap.sh eks-demo`.
 
