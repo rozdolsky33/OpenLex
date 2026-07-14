@@ -207,3 +207,22 @@ async def test_generate_answer_classifies_other_api_errors_and_reraises_unchange
             await generate_answer("what is a tenant?", passages=[PASSAGE])
 
     assert mock_record.call_args.kwargs["status"] == "api_error"
+
+
+async def test_generate_answer_classifies_connection_error_and_reraises_unchanged() -> None:
+    mock_client = AsyncMock()
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    mock_client.messages.create.side_effect = anthropic.APIConnectionError(request=request)
+
+    with (
+        patch("legal_generation.generator.anthropic.AsyncAnthropic", return_value=mock_client),
+        patch("legal_generation.generator.record_anthropic_call") as mock_record,
+    ):
+        with pytest.raises(anthropic.APIConnectionError):
+            await generate_answer("what is a tenant?", passages=[PASSAGE])
+
+    mock_record.assert_called_once()
+    call_kwargs = mock_record.call_args.kwargs
+    assert call_kwargs["status"] == "connection_error"
+    assert call_kwargs["input_tokens"] == 0
+    assert call_kwargs["output_tokens"] == 0

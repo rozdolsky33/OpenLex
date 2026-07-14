@@ -121,6 +121,20 @@ async def generate_answer(
                 duration_seconds=time.perf_counter() - start,
             )
             raise
+        except anthropic.APIConnectionError:
+            # APIConnectionError (and its subclass APITimeoutError) are not APIStatusError
+            # subtypes -- they carry no HTTP response, since the failure happens before one is
+            # received. Same pure-observability contract as above: classify, record, re-raise
+            # unchanged.
+            span.set_attribute("error.type", "connection_error")
+            record_anthropic_call(
+                model=settings.anthropic_model,
+                status="connection_error",
+                input_tokens=0,
+                output_tokens=0,
+                duration_seconds=time.perf_counter() - start,
+            )
+            raise
 
         span.set_attribute("gen_ai.usage.input_tokens", response.usage.input_tokens)
         span.set_attribute("gen_ai.usage.output_tokens", response.usage.output_tokens)
