@@ -1,0 +1,58 @@
+# infra/argocd/apps/eks-demo/app-oauth2-proxy.yaml
+#
+# Gates Grafana behind a single login (7.9 revised). GitHub OAuth chosen over a static
+# htpasswd-style provider (spec's own open question, resolved here): oauth2-proxy's htpasswd
+# support is a secondary/basic-auth fallback, not designed as a standalone primary provider,
+# and GitHub OAuth is both the more realistic cloud-native pattern and a natural fit for a
+# project that already lives on GitHub. Requires a GitHub OAuth App registered by hand
+# (Settings -> Developer settings -> OAuth Apps -> New OAuth App, callback URL
+# https://grafana.<DOMAIN>/oauth2/callback) — a manual one-time step in the same category as
+# this project's other documented manual bootstrap steps (Route53 nameservers, Secrets Manager
+# seed values). `<GITHUB_USERNAME>` restricts access to a single operator (replace with your
+# own GitHub username) -- without it, any GitHub-authenticated user could log in. Client
+# ID/secret/cookie secret come from externalsecret-oauth2-proxy.yaml, never committed here.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: oauth2-proxy
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: openlex-eks-demo
+  source:
+    repoURL: https://oauth2-proxy.github.io/manifests
+    chart: oauth2-proxy
+    targetRevision: "7.9.*"
+    helm:
+      valuesObject:
+        config:
+          existingSecret: oauth2-proxy-secrets
+        extraArgs:
+          provider: github
+          github-user: "<GITHUB_USERNAME>"
+          email-domain: "*"
+          upstreams: static://202
+          http-address: "0.0.0.0:4180"
+          cookie-secure: "true"
+          cookie-samesite: "lax"
+          set-xauthrequest: "true"
+        nodeSelector:
+          openlex.dev/workload: observability
+        tolerations:
+          - key: openlex.dev/workload
+            operator: Equal
+            value: observability
+            effect: NoSchedule
+        resources:
+          requests: { cpu: 25m, memory: 32Mi }
+          limits: { cpu: 100m, memory: 64Mi }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

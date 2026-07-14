@@ -1,0 +1,145 @@
+# infra/argocd/apps/eks-demo/app-kube-prometheus-stack.yaml
+#
+# Identical to infra/argocd/apps/kind/app-kube-prometheus-stack.yaml, including the shared
+# values-base.yaml's additionalPrometheusRulesMap (the five symptom-based alerts) and
+# Grafana's dashboard sidecar config -- both apply to eks-demo automatically once this
+# Application syncs, no separate wiring needed. additionalDataSources' URLs are unchanged from
+# kind's: Tempo/Jaeger/Loki resolve at the same in-cluster Service DNS names here as they do
+# on kind (Tasks 6/7 gave eks-demo its own tempo/jaeger/loki Services in the same
+# `observability` namespace).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: openlex-eks-demo
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: kube-prometheus-stack
+      targetRevision: "87.15.*"
+      helm:
+        valueFiles:
+          - $values/infra/monitoring/kube-prometheus-stack/values-base.yaml
+        valuesObject:
+          prometheusOperator:
+            # nodeSelector/tolerations only — resources already live in the shared
+            # values-base.yaml (25m/64Mi request, 100m/128Mi limit); do not repeat them here.
+            nodeSelector:
+              openlex.dev/workload: observability
+            tolerations:
+              - key: openlex.dev/workload
+                operator: Equal
+                value: observability
+                effect: NoSchedule
+          prometheus:
+            prometheusSpec:
+              retention: 6h
+              nodeSelector:
+                openlex.dev/workload: observability
+              tolerations:
+                - key: openlex.dev/workload
+                  operator: Equal
+                  value: observability
+                  effect: NoSchedule
+              resources:
+                requests: { cpu: 100m, memory: 400Mi }
+                limits: { cpu: 500m, memory: 800Mi }
+          alertmanager:
+            alertmanagerSpec:
+              nodeSelector:
+                openlex.dev/workload: observability
+              tolerations:
+                - key: openlex.dev/workload
+                  operator: Equal
+                  value: observability
+                  effect: NoSchedule
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits: { cpu: 100m, memory: 64Mi }
+          grafana:
+            nodeSelector:
+              openlex.dev/workload: observability
+            tolerations:
+              - key: openlex.dev/workload
+                operator: Equal
+                value: observability
+                effect: NoSchedule
+            resources:
+              requests: { cpu: 50m, memory: 256Mi }
+              limits: { cpu: 300m, memory: 768Mi }
+            additionalDataSources:
+              - name: Tempo
+                uid: tempo
+                type: tempo
+                access: proxy
+                url: http://tempo.observability.svc.cluster.local:3200
+                isDefault: false
+                jsonData:
+                  # Without this, the Tempo datasource's Service Graph feature (used by
+                  # applications/trace-explorer.json's "Service graph" panel) has no way to
+                  # know which Prometheus datasource holds the traces_service_graph_* metrics
+                  # Tempo's metrics-generator writes -- it silently renders empty even though
+                  # the metrics genuinely exist (confirmed live: 46 traces_service_graph_*
+                  # series in Prometheus), because the panel has nowhere to query. `prometheus`
+                  # is this same Application's own Prometheus datasource uid (set explicitly
+                  # above kube-prometheus-stack's chart convention, matching what
+                  # applications/tier-and-quota.json already hardcodes).
+                  serviceMap:
+                    datasourceUid: prometheus
+              - name: Jaeger
+                uid: jaeger
+                type: jaeger
+                access: proxy
+                url: http://jaeger.observability.svc.cluster.local:16686
+                isDefault: false
+              - name: Loki
+                uid: loki
+                type: loki
+                access: proxy
+                url: http://loki.observability.svc.cluster.local:3100
+                isDefault: false
+          kube-state-metrics:
+            nodeSelector:
+              openlex.dev/workload: observability
+            tolerations:
+              - key: openlex.dev/workload
+                operator: Equal
+                value: observability
+                effect: NoSchedule
+            resources:
+              requests: { cpu: 10m, memory: 32Mi }
+              limits: { cpu: 50m, memory: 64Mi }
+          prometheus-node-exporter:
+            # DaemonSet — must run on every node (including control-plane and the dedicated
+            # observability node, to report their own metrics), so no nodeSelector restricting
+            # it. The chart's own default tolerations (verified: charts/prometheus-node-
+            # exporter/values.yaml) is a single blanket `{effect: NoSchedule, operator: Exists}`
+            # entry that already tolerates ANY NoSchedule taint, including control-plane's and
+            # our custom observability one. An earlier pass replaced this with only the
+            # observability-specific entry — Helm array-replace (not merge) semantics meant
+            # that silently dropped control-plane scheduling (confirmed live: node-exporter was
+            # missing from openlex-control-plane, exactly the same bug class Promtail hit and
+            # fixed in Task 9). Restoring the chart's own blanket form here, which covers both
+            # taints at once rather than listing them individually.
+            tolerations:
+              - effect: NoSchedule
+                operator: Exists
+            resources:
+              requests: { cpu: 10m, memory: 24Mi }
+              limits: { cpu: 50m, memory: 48Mi }
+    - repoURL: https://github.com/rozdolsky33/OpenLex.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

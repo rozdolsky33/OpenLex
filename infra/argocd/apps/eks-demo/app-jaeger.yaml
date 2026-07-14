@@ -1,0 +1,44 @@
+# infra/argocd/apps/eks-demo/app-jaeger.yaml
+#
+# Identical to infra/argocd/apps/kind/app-jaeger.yaml — in-memory storage (comparison backend,
+# data does not survive a pod restart), no PVC, no StorageClass dependency.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: jaeger
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: openlex-eks-demo
+  sources:
+    - repoURL: https://jaegertracing.github.io/helm-charts
+      chart: jaeger
+      targetRevision: "4.11.*"
+      helm:
+        valueFiles:
+          - $values/infra/monitoring/jaeger/values-base.yaml
+        valuesObject:
+          jaeger:
+            nodeSelector:
+              openlex.dev/workload: observability
+            tolerations:
+              - key: openlex.dev/workload
+                operator: Equal
+                value: observability
+                effect: NoSchedule
+            resources:
+              requests: { cpu: 50m, memory: 128Mi }
+              limits: { cpu: 200m, memory: 256Mi }
+    - repoURL: https://github.com/rozdolsky33/OpenLex.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

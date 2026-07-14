@@ -1,0 +1,30 @@
+# infra/argocd/apps/eks-demo/app-observability-dashboards.yaml
+#
+# Identical to infra/argocd/apps/kind/app-observability-dashboards.yaml. The dashboard JSON
+# itself (infra/monitoring/grafana/dashboards/) needs zero eks-demo-specific changes -- it's
+# PromQL/LogQL/TraceQL querying Prometheus/Loki/Tempo by Service DNS name, and eks-demo's
+# Tempo/Jaeger/Loki/Prometheus resolve at those same names (Tasks 6/7/8's Applications all
+# live in the same `observability` namespace kind uses). This is what resolves the original
+# 7.6 draft's open question about needing parallel CloudWatch-flavored dashboards -- moot,
+# since eks-demo never queries CloudWatch at all under this revised design.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: observability-dashboards
+  namespace: argocd
+spec:
+  project: openlex-eks-demo
+  source:
+    repoURL: https://github.com/rozdolsky33/OpenLex.git
+    targetRevision: main
+    path: infra/monitoring/grafana/dashboards
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

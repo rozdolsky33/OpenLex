@@ -22,3 +22,11 @@ eval-results.json
 .agents/
 .claude/scheduled_tasks.lock
 skills-lock.json
+
+# Terraform (infra/terraform/) — local plan/state artifacts and real backend/tfvars values,
+# never committed (see infra/terraform/README.md's "Remote state" section and
+# terraform.tfvars.example/backend.hcl.example for the committed templates).
+infra/terraform/.terraform/
+infra/terraform/*.tfstate*
+infra/terraform/backend.hcl
+infra/terraform/terraform.tfvars

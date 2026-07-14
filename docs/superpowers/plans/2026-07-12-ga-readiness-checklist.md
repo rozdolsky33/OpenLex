@@ -4,9 +4,10 @@ Flat tracking sheet — check items off as PRs merge. Full reasoning, acceptance
 file-level detail for each item live in
 `docs/superpowers/plans/2026-07-12-ga-readiness-roadmap.md`; this file is just the scoreboard.
 
-**Progress: 31 / 43 items complete (72%)** — update this line by hand as boxes get checked.
-(Recount 2026-07-14: prior "20/37" had drifted stale — items added during the observability
-work, e.g. 3.12-3.14, were never folded into the denominator.)
+**Progress: 37 / 52 items complete (71%)** — update this line by hand as boxes get checked.
+(Recount 2026-07-14: Phase 7 grew again with 7.7-7.9 — node topology, static CDN hosting,
+observability ingress/auth — added during design review after further requirements came in.
+Progress % naturally dips as scope is discovered, not regresses; 37 done items is unchanged.)
 
 ## Phase 0 — Prep
 - [ ] 0.1 Fix `pipelines.yml` to actually run `apps/worker/tests`
@@ -238,12 +239,61 @@ legal product — see CLAUDE.md's "Why this project exists" section)
       by loosening assertions. `apps/api` rebuilt/redeployed with the fix and re-verified live
       against the running cluster.
 
-## Phase 6 — CI/CD & infra hardening 🟡 partial
-- [ ] 6.1 `tests/integration` gated in CI (not manual-only)
-- [ ] 6.2 Real e2e smoke test replaces the empty stub
-- [ ] 6.3 Deploy workflow automated, or manual runbook documented
-- [ ] 6.4 Terraform remote state (S3 + DynamoDB)
-- [ ] 6.5 Postgres backup/DR strategy defined and documented
+## Phase 6 — CI/CD & infra hardening — ✅ done 2026-07-14 (PRs #27, #28, #29, #30 + a direct
+docs commit, all merged to `develop` then promoted to `main` via #31)
+- [x] 6.1 `tests/integration` gated in CI — real Postgres+pgvector service container
+      (`integration.yml`), not manual-only anymore
+- [x] 6.2 Real e2e smoke test replaces the empty stub — `tests/end_to_end/test_smoke.py`,
+      gated on every PR (`smoke.yml`)
+- [x] 6.3 Deploy workflow automated — `deploy.yml`: real multi-arch (amd64+arm64) build, push
+      to GHCR, GitOps-commit back to `develop`, ArgoCD auto-syncs. Live-verified twice,
+      including finding and fixing two real bugs (`root-kind.yaml`'s stale `targetRevision`;
+      the QEMU/multi-arch crash) that only surfaced by watching the pipeline actually run.
+- [x] Environment/branch model (added during design, not originally scoped): `develop` =
+      staging (kind+ArgoCD), `main` = reserved for a real future production/EKS environment.
+      See `docs/infrastructure/dev-workflow-and-branching.md`.
+- [x] Docker-compose observability parity (added during design, not originally scoped):
+      OTel Collector + Prometheus + Grafana + Jaeger added to the local dev loop.
+- 6.4 (Terraform remote state) and 6.5 (Postgres backup/DR) **moved to Phase 7** below — see
+      the roadmap doc's Phase 6 "Scope note" for why.
+
+## Phase 7 — AWS-flavored production path: RDS, Secrets Manager, External Secrets 🔴 blocker
+Design spec approved and committed (`docs/superpowers/specs/
+2026-07-14-phase7-aws-rds-secrets-manager-design.md`) — implementation plan not yet written.
+Design/build only this pass, no live AWS deployment (confirmed with the user).
+- [ ] 7.1 Design + implement: RDS Postgres (pgvector) for production, replacing the in-cluster
+      StatefulSet. Includes a corrected VPC assumption (public-subnets-only, no NAT Gateway —
+      RDS joins existing public subnets with `publicly_accessible=false` + security groups as
+      the real isolation boundary) and a documented `kubectl` debug-pod pattern for occasional
+      operator access instead of a bastion/SSM setup.
+- [ ] 7.2 Verify + complete (not rebuild): the existing but never-live-verified Secrets
+      Manager + External Secrets Operator manifests for production/EKS
+- [x] 7.3 Environment isolation — **resolved as "no new code needed."** Local kind never gains
+      any path to real AWS resources, not even optional (a hybrid bootstrap mode was
+      considered during design and deliberately dropped — see the spec's 7.3). Local stays
+      100% local, cloud stays 100% cloud.
+- [ ] 7.4 Terraform remote state (S3 + DynamoDB) — was 6.4
+- [ ] 7.5 Postgres backup/DR strategy — was 6.5, resolved via 7.1's RDS automated backups
+- [ ] 7.6 Cloud observability (added during design, not in the original sketch): AWS-native
+      managed backends (X-Ray for traces, CloudWatch for metrics/logs via the same OTel
+      Collector config already proven on kind/compose) instead of copying kind's full
+      self-hosted stack — cheap, no dedicated observability node needed on eks-demo's
+      currently-single-node cluster. One small self-hosted Grafana stays the shared viewing
+      layer across kind and eks-demo (CloudWatch + X-Ray as Grafana datasources).
+- [ ] 7.7 Node topology (added during design): split the single EKS node group into
+      `observability` (t4g.large, mirrors kind's dedicated tainted node) + `apps` (t4g.medium,
+      fixed 2 nodes/1 per AZ, real multi-AZ HA with **hard** anti-affinity — stronger than
+      kind's soft-only version, since EKS can actually replace a drained node). Adds the
+      `aws-ebs-csi-driver` addon (not present today) for Prometheus/Loki/Tempo's PVs.
+- [ ] 7.8 Static content (added during design): `apps/web` gains a real production build
+      (`vite build`, not the dev-server-in-a-container it's always been) served via S3 +
+      CloudFront, with a new `deploy-static.yml` triggered on push to `main`. Splits
+      `app.<domain>` (CloudFront/S3) from `api.<domain>` (ingress-nginx, unchanged).
+- [ ] 7.9 Ingress + unified auth for the observability stack (added during design):
+      `oauth2-proxy` in front of Grafana/Prometheus/Jaeger via ingress-nginx (one shared
+      login for all three — neither has real built-in auth to unify otherwise). ArgoCD keeps
+      its own separate, already-secure native login rather than double-gating it — stated
+      explicitly as a scope decision, not "all four share one password."
 
 ## Sign-off gates (not code — human decisions required before flipping to GA)
 - [ ] Legal counsel has reviewed and approved ToS/privacy text (Phase 4)

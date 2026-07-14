@@ -1,0 +1,8 @@
+# infra/terraform/backend.hcl.example
+#
+# Copy to backend.hcl (git-ignored), fill in real values, then:
+#   terraform init -backend-config=backend.hcl -migrate-state
+bucket         = "<your-tfstate-bucket>"
+key            = "openlex/eks-demo/terraform.tfstate"
+region         = "us-east-1"
+dynamodb_table = "<your-tflock-table>"

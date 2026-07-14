@@ -1,0 +1,50 @@
+# infra/argocd/apps/eks-demo/app-promtail.yaml
+#
+# Identical to infra/argocd/apps/kind/app-promtail.yaml — DaemonSet, deliberately no
+# nodeSelector (must run on both node groups to ship openlex-api/worker's own pod logs too,
+# not just observability-node components), three-entry toleration list (control-plane taint +
+# master taint + the observability taint) so nothing gets silently dropped by Helm's
+# array-replace-not-merge values semantics -- same reasoning as kind's own file.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: promtail
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: openlex-eks-demo
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: promtail
+      targetRevision: "6.17.*"
+      helm:
+        valueFiles:
+          - $values/infra/monitoring/promtail/values-base.yaml
+        valuesObject:
+          tolerations:
+            - key: node-role.kubernetes.io/master
+              operator: Exists
+              effect: NoSchedule
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+              effect: NoSchedule
+            - key: openlex.dev/workload
+              operator: Equal
+              value: observability
+              effect: NoSchedule
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { cpu: 100m, memory: 128Mi }
+    - repoURL: https://github.com/rozdolsky33/OpenLex.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

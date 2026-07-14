@@ -38,3 +38,18 @@ output "ecr_repository_urls" {
   description = "Paste into infra/kubernetes/overlays/eks-demo/kustomization.yaml's images: newName fields"
   value       = { for k, v in aws_ecr_repository.this : k => v.repository_url }
 }
+
+output "web_bucket_name" {
+  description = "Paste into the GitHub repo's OPENLEX_WEB_BUCKET Actions variable"
+  value       = aws_s3_bucket.web.id
+}
+
+output "cloudfront_distribution_id" {
+  description = "Paste into the GitHub repo's OPENLEX_CLOUDFRONT_DISTRIBUTION_ID Actions variable"
+  value       = aws_cloudfront_distribution.web.id
+}
+
+output "github_actions_deploy_web_role_arn" {
+  description = "Paste into the GitHub repo's GITHUB_ACTIONS_DEPLOY_WEB_ROLE_ARN Actions variable"
+  value       = aws_iam_role.github_actions_deploy_web.arn
+}

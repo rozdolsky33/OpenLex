@@ -26,19 +26,55 @@ variable "cluster_version" {
 }
 
 variable "node_instance_type" {
-  description = "Single small Graviton instance type — no GPU needed (see ml/model_cards/bge-small-en-v1.5.md)"
+  description = "Instance type for the `apps` node group — no GPU needed (see ml/model_cards/bge-small-en-v1.5.md)"
   type        = string
   default     = "t4g.medium"
 }
 
-variable "node_desired_size" {
-  description = "Node count — 1 is enough for this workload; see docs/infrastructure/aws-eks-cost-estimate.md"
-  type        = number
-  default     = 1
+variable "observability_node_instance_type" {
+  description = "Instance type for the `observability` node group — larger than apps: kube-prometheus-stack + Tempo + Jaeger + Loki + Promtail + OTel Collector + ArgoCD together need more headroom"
+  type        = string
+  default     = "t4g.large"
 }
 
 variable "secrets_manager_path_prefix" {
   description = "Path prefix in AWS Secrets Manager that external-secrets is allowed to read"
   type        = string
   default     = "openlex"
+}
+
+variable "db_instance_class" {
+  description = "RDS instance class — Graviton, matches this repo's cost-conscious node-type precedent"
+  type        = string
+  default     = "db.t4g.micro"
+}
+
+variable "db_allocated_storage" {
+  description = "RDS allocated storage in GB (gp3)"
+  type        = number
+  default     = 20
+}
+
+variable "db_backup_retention_days" {
+  description = "RDS automated backup retention period, in days"
+  type        = number
+  default     = 7
+}
+
+variable "db_name" {
+  description = "Database name inside the RDS instance — matches local dev's docker-compose convention"
+  type        = string
+  default     = "openlex"
+}
+
+variable "db_username" {
+  description = "Master username for the RDS instance — matches local dev's docker-compose convention"
+  type        = string
+  default     = "openlex"
+}
+
+variable "github_repository" {
+  description = "GitHub \"owner/repo\" this project lives in — scopes the GitHub Actions OIDC trust policy"
+  type        = string
+  default     = "rozdolsky33/OpenLex"
 }

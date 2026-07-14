@@ -2,10 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan phase-by-phase. Phases
-> 1-2 are specified at file/diff level and are ready to execute now. Phases 3-6 are specified
+> 1-2 are specified at file/diff level and are ready to execute now. Phases 3-7 are specified
 > at task level only — write a follow-up detailed plan (superpowers:writing-plans) for each
 > phase immediately before starting it, per superpowers:incremental-implementation (don't
-> front-load implementation detail for work that's still weeks out and may shift).
+> front-load implementation detail for work that's still weeks out and may shift). Phases 1-6
+> are done as of 2026-07-14; Phase 7 is not yet brainstormed/specced.
 
 **Goal:** Take OpenLex from its current ~50% "demo-grade" state (assessed 2026-07-12) to GA:
 public-facing, safe under abuse/scale, observable in production, legally compliant, and backed
@@ -307,30 +308,136 @@ top N Appellate Division landlord-tenant cases") rather than expanding indefinit
 
 ---
 
-## Phase 6 — CI/CD & infra hardening (final pass before GA) 🟡
+## Phase 6 — CI/CD & infra hardening ✅ done 2026-07-14
 
-**Why:** Infra/CI foundations are real (not vaporware) but self-documented as demo-grade:
-local Terraform state, no deploy workflow, integration/e2e tests are manual-only, single-node
-Postgres with no backup/DR.
+**Why:** Infra/CI foundations were real (not vaporware) but self-documented as demo-grade:
+no CI gate on `tests/integration/`, `tests/end_to_end` was an empty stub, and every
+deployment was a manual `docker build` + `kind load docker-image` + `kubectl delete pod`
+sequence run by hand.
 
-- [ ] **6.1** Gate `tests/integration/` in CI — spin up a `db-test` Postgres+pgvector service
-      container in a new/extended workflow, run the real-DB suite on every relevant PR, not
-      manually only — M
-- [ ] **6.2** Replace the `tests/end_to_end` stub with at least one real smoke test (login →
-      query → see a cited, disclaimered answer) — M
-- [ ] **6.3** Add an actual deploy workflow (build+push image to ECR, trigger ArgoCD
-      sync/kubectl apply) — or, if full CD automation is out of scope for this GA, write an
-      explicit manual deploy runbook so "how do we ship a fix" isn't tribal knowledge — M
-- [ ] **6.4** Move Terraform state to a remote backend (S3 + DynamoDB lock table) instead of
-      local state — S
-- [ ] **6.5** Define a Postgres backup/DR strategy for the k8s StatefulSet (scheduled
-      `pg_dump` to S3 at minimum, or migrate to a managed RDS instance) — M
+**Scope note:** 6.4 (Terraform remote state) and 6.5 (Postgres backup/DR) were deliberately
+moved out of this phase during design and folded into the new Phase 7 below (AWS RDS +
+Secrets Manager + External Secrets Operator work naturally supersedes a bare S3 Terraform
+backend and a hand-rolled `pg_dump` strategy) — see
+`docs/superpowers/specs/2026-07-14-phase6-cicd-hardening-design.md`'s "Explicitly out of
+scope." 6.3 shipped as a real GHCR-backed pipeline, not the ECR option originally sketched
+here (ECR/EKS is Phase 7 scope; GHCR needed zero AWS dependency for this phase).
 
-### Checkpoint: Phase 6
-- [ ] A PR touching `tests/integration` shows those tests running in the Actions log, not just
-      locally
-- [ ] `terraform plan` against the remote backend shows no unexpected drift after migration
-- [ ] A documented (and ideally rehearsed) restore-from-backup procedure exists for Postgres
+- [x] **6.1** Gate `tests/integration/` in CI — `.github/workflows/integration.yml`, a real
+      `pgvector/pgvector:pg16` service container (matching `scripts/test-db.sh`'s local
+      convention exactly), migrations applied in filename order, runs on every relevant PR.
+- [x] **6.2** Replace the `tests/end_to_end` stub — `tests/end_to_end/test_smoke.py`, a real
+      login → query → cited-answer smoke test, gated in CI (`smoke.yml`) on every PR.
+- [x] **6.3** Real deploy pipeline — `.github/workflows/deploy.yml`: on push to `develop`,
+      builds real **multi-arch** (`linux/amd64,linux/arm64`) images, pushes to GHCR (private),
+      GitOps-commits an image-tag bump back into `infra/kubernetes/overlays/kind/kustomization.yaml`
+      so ArgoCD (no inbound network path from GitHub to the local cluster ever needed) picks
+      it up itself. `scripts/kind-load-images.sh` (fast local iteration) untouched; new
+      `scripts/use-local-images.sh` for a local, never-committed override.
+- [x] **Environment/branch model** (not originally scoped, added during design): `develop` is
+      now the branch kind+ArgoCD watches (staging); `main` reserved for a real future
+      production/EKS environment (Phase 7), promoted only via a deliberate PR — see
+      `docs/infrastructure/dev-workflow-and-branching.md`.
+- [x] **Docker-compose observability parity** (not originally scoped, added during design):
+      `docker-compose.yml` gained OTel Collector + Prometheus + Grafana + Jaeger, so the fast
+      local dev loop has real trace/metric visibility without needing kind at all.
+
+### Checkpoint: Phase 6 — all live-verified, not just CI-green
+- [x] `tests/integration` runs in the Actions log on every relevant PR (confirmed via
+      `integration.yml`'s real Postgres service container, not a mock)
+- [x] Deploy pipeline verified end-to-end for real, twice: images landed in GHCR, the bot
+      commit landed on `develop`, ArgoCD picked it up, and the running pods' `imageID`s
+      matched the newly-pushed digests (`kubectl get pods -o custom-columns=...imageID`)
+- [x] Two real bugs found and fixed only by watching the pipeline actually run (neither
+      visible in any code review): `infra/argocd/root-apps/root-kind.yaml` was still pinned
+      to `main` (ArgoCD's `selfHeal` was silently reverting the `develop` retarget every
+      reconcile), and `deploy.yml`'s images were amd64-only, crash-looping `apps/web` under
+      QEMU emulation on the arm64 kind cluster (`apps/api`/`apps/worker`, pure Python,
+      tolerated the same emulation silently) — both root-caused and fixed live, not just
+      patched blind
+
+---
+
+## Phase 7 — AWS-flavored production path: RDS, Secrets Manager, External Secrets 🔴
+
+**Why:** Phase 6 deliberately kept the CI/CD pipeline AWS-free (GHCR, not ECR) to close out
+CI/CD essentials without a real-money dependency. Phase 7 is the actual cloud-production path:
+a managed Postgres (replacing the in-cluster StatefulSet, which has no backup/DR story — this
+absorbs the old 6.5), Terraform remote state for the real infra that provisions it (absorbing
+the old 6.4), AWS Secrets Manager + External Secrets Operator for the cloud path, and a cheap
+AWS-native observability strategy (7.6, added during design) so `eks-demo` isn't left with
+zero visibility.
+
+**Design approved:** `docs/superpowers/specs/2026-07-14-phase7-aws-rds-secrets-manager-design.md`
+(design/build only this pass, no live AWS deployment — confirmed with the user). Implementation
+plan not yet written.
+
+**Revised during design — local/cloud stay strictly isolated:** the original sketch below
+(7.3) proposed an opt-in hybrid mode letting local kind pull secrets or connect to RDS from
+real AWS. Dropped during design review: letting a developer's laptop reach into a cloud
+database is the anti-pattern real platform teams avoid, not something worth building
+convenience tooling for. Local kind stays 100% local (`.env` + in-cluster Postgres, unchanged,
+zero new code); cloud stays 100% cloud (RDS + Secrets Manager + External Secrets Operator). No
+developer ever needs credentials for both at once. See the spec's 7.3 for the full reasoning.
+
+- [ ] **7.1** RDS Postgres (pgvector) as the production database, replacing the in-cluster
+      StatefulSet — joins the *existing* public subnets (this VPC has no private subnets, no
+      NAT Gateway, deliberately — see `vpc.tf`) with `publicly_accessible=false` + security
+      groups as the real isolation boundary, not new private subnets. Terraform writes the
+      real `DATABASE_URL` directly into the `openlex/app` Secrets Manager secret (closing an
+      existing fully-manual step). Occasional operator access via a throwaway `kubectl` debug
+      pod (EKS is already in the VPC) instead of a bastion/SSM setup.
+- [ ] **7.2** Verify + complete (not rebuild) the existing but never-live-verified Secrets
+      Manager + External Secrets Operator manifests (`ClusterSecretStore`, `ExternalSecret`,
+      IRSA role all already exist in `infra/argocd/apps/eks-demo/` and
+      `infra/terraform/iam_irsa_external_secrets.tf`) for the production/EKS environment
+- [x] **7.3** Environment isolation — resolved as documentation, not new code (see above)
+- [ ] **7.4** Terraform remote state (S3 + DynamoDB lock table) for `infra/terraform/` — the
+      old 6.4, now scoped alongside the rest of the real AWS work it was always meant to
+      protect
+- [ ] **7.5** Postgres backup/DR strategy — the old 6.5, resolved for free via 7.1's RDS
+      automated backups/snapshots rather than a hand-rolled `pg_dump` strategy
+- [ ] **7.6** Cloud observability (added during design, not originally scoped): AWS-native
+      managed backends instead of copying kind's full self-hosted stack — `eks-demo` is
+      currently single-node (`node_desired_size = 1`), with nowhere to put a
+      kube-prometheus-stack-sized footprint without growing the cluster just to host it.
+      X-Ray for traces + CloudWatch for metrics/logs, via the *same* OTel Collector config
+      shape already proven on kind/compose (just different exporters). One small self-hosted
+      Grafana (chart only, not the full bundle) with CloudWatch + X-Ray as datasources stays
+      the single shared viewing layer across kind and eks-demo.
+- [ ] **7.7** Node topology (added during design): split the single EKS node group into
+      `observability` (t4g.large, mirrors kind's dedicated tainted node — reuses its exact
+      taint/label scheme, so `infra/argocd/apps/kind/app-*.yaml`'s nodeSelector/tolerations
+      carry over unchanged) + `apps` (t4g.medium, fixed 2 nodes/1 per real AZ — unlike kind's
+      same-Docker-daemon fake nodes). `openlex-api`'s anti-affinity becomes hard
+      (`required`), not kind's soft `preferred` — safe here since EKS can replace a drained
+      node automatically. Adds the missing `aws-ebs-csi-driver` addon for observability PVs.
+- [ ] **7.8** Static content via CDN (added during design): `apps/web` gains its first real
+      production build (`vite build` — it has only ever run as a Vite dev server, even on
+      eks-demo) served via S3 + CloudFront (global edge, Europe included by default), with a
+      new `deploy-static.yml` triggered on push to `main`. Splits `app.<domain>`
+      (CloudFront/S3) from `api.<domain>` (ingress-nginx, unchanged) — a real
+      build-time-vs-runtime distinction for `VITE_API_BASE_URL` to get right.
+- [ ] **7.9** Ingress + unified auth for the observability stack (added during design):
+      `oauth2-proxy` in front of Grafana/Prometheus/Jaeger via ingress-nginx (neither
+      Prometheus nor Jaeger has real built-in auth, so there's nothing to unify on their end
+      without a proxy regardless). ArgoCD explicitly keeps its own separate native login
+      rather than being silently claimed as "also unified" — stated as a scope decision.
+
+### Checkpoint: Phase 7
+- [ ] `terraform validate`/`terraform plan` clean against the existing local-state backend (no
+      live deployment this phase)
+- [ ] A documented (and ideally rehearsed once actually deployed) restore-from-backup
+      procedure exists for the production Postgres
+- [ ] `scripts/kind-secrets-bootstrap.sh` and every local kind manifest confirmed genuinely
+      untouched by this phase (verifies 7.3's isolation guarantee held in practice, not just
+      in the design doc)
+- [ ] The reused kind taint/label strings (7.7) are confirmed byte-identical between the kind
+      and eks-demo manifests — a silent typo here is a scheduling failure, not a
+      `terraform validate` error
+- [ ] `apps/web`'s new production build (7.8) verified locally (`npm run build` produces real
+      static assets referencing the baked-in API URL) — the one piece of 7.7-7.9 testable
+      without touching AWS at all
 
 ---
 

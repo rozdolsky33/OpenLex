@@ -174,6 +174,12 @@ always includes `citations`, an `abstained` flag (for when retrieval doesn't sup
 answer), and the fixed legal `disclaimer` string — these are the shape any future
 `/query`-style endpoint must return. See the `grounded-answer-contract` skill.
 
+## Git workflow
+
+Open pull requests against `develop`, not `main` — `main` is the production branch (see
+`docs/infrastructure/dev-workflow-and-branching.md`), and `develop` is where day-to-day and
+feature work lands first.
+
 ## Project skills & agents
 
 `.claude/agents/` and `.claude/skills/` hold project-specific context beyond this file:

@@ -54,6 +54,16 @@ scripts/ingest.sh all
 
 Then open the UI at http://localhost:5173 (API at http://localhost:8000, docs at `/docs`).
 
+**This is the fast, native local dev loop — recommended default for day-to-day iteration.**
+There's also a local **kind** (Kubernetes-in-Docker) cluster with a real ArgoCD GitOps
+pipeline and full observability stack (Prometheus, Grafana, Tempo, Jaeger, Loki), used for
+staging-realistic testing rather than everyday coding — it needs more tools and more machine
+resources than docker-compose does. See
+[`docs/infrastructure/kubernetes-topology.md`](docs/infrastructure/kubernetes-topology.md) for
+what it needs and why, and
+[`docs/infrastructure/dev-workflow-and-branching.md`](docs/infrastructure/dev-workflow-and-branching.md)
+for how the two fit together with CI/CD.
+
 ## Repository layout
 
 This is a **monorepo** (modular monolith, not microservices) — see

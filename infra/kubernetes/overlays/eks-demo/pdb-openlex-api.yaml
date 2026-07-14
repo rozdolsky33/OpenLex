@@ -1,0 +1,14 @@
+# infra/kubernetes/overlays/eks-demo/pdb-openlex-api.yaml
+#
+# Same as infra/kubernetes/overlays/kind/pdb-openlex-api.yaml — backs the "HA" claim of the
+# `apps` node group's 2 fixed replicas/2 AZs (infra/terraform/eks.tf) during voluntary
+# disruptions (node drain, EKS-managed-node-group instance replacement).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: openlex-api
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openlex-api
