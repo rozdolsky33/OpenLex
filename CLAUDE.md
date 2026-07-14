@@ -14,6 +14,34 @@ The repo is a **monorepo, modular monolith** (`apps/` + `packages/` + `pipelines
 workspace) — see `docs/decisions/0001-monorepo-restructure.md` for the full rationale and a
 mapping of where the old `backend/`/`frontend/` code moved to.
 
+## Why this project exists — read before scoping any work
+
+OpenLex is a portfolio POC demonstrating SRE/Platform Engineering skills applied to an
+AI-powered product — here, a legal-tech RAG system for a hypothetical greenfield team. It is
+**not** headed for a real GA launch. This changes what "done" means for different parts of
+the repo:
+
+- **Legal content (statute/case-law corpus, ToS/privacy copy, eval question coverage) only
+  needs to be *credible*, not *complete*.** Enough breadth to demonstrate real hybrid
+  retrieval + grounded generation working end-to-end on non-trivial legal text is the bar —
+  not exhaustive coverage of NY landlord-tenant law. Don't unilaterally expand corpus/content
+  scope; when a GA-checklist item implies "more," default to the smallest slice that proves
+  the mechanism works, and confirm before going bigger.
+- **SRE/Platform/operational depth is the actual product being demonstrated.** Observability
+  (traces/metrics/logs, cost/token tracking per LLM call, symptom-based alerting), reliability
+  (quota enforcement, safe rollout/redeploy discipline, GitOps via ArgoCD), incident response,
+  and infra-as-code are what this repo exists to showcase. When in doubt about where to spend
+  effort, this is almost always the higher-value direction over legal-domain breadth.
+- **Real incidents are good material, not just interruptions.** When something breaks during
+  ops work (e.g. the 2026-07-14 Docker Desktop disk-exhaustion incident during Phase 5
+  ingestion — see `docs/postmortems/`), root-cause it properly and write it up. That's more
+  valuable to this project's actual purpose than the feature that was in flight when it broke.
+
+The GA readiness checklist (`docs/superpowers/plans/2026-07-12-ga-readiness-checklist.md`)
+still tracks real work, but Phases 4/5 (legal/compliance content, corpus expansion) should be
+treated as "reasonable minimum," while Phase 3 (observability) and Phase 6 (CI/CD & infra
+hardening) are where continued investment actually serves the project's purpose.
+
 ## Current state (important)
 
 The end-to-end statute path — ingest → normalize → chunk → embed → index → hybrid retrieve →

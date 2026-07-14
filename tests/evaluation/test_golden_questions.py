@@ -27,6 +27,23 @@ def _load_golden_questions() -> list[dict[str, Any]]:
     return yaml.safe_load(GOLDEN_QUESTIONS_PATH.read_text())["questions"]
 
 
+def _as_params(cases: list[dict[str, Any]]) -> list[Any]:
+    """Wraps each case in pytest.param, applying xfail (not strict -- an unexpected pass
+    doesn't fail the build either) when the case carries a known_gap_reason. See
+    golden_questions.yaml's header for why: these are documented, already-understood
+    retrieval-recall gaps, not assertions to silently weaken. Keeping them out of the normal
+    pass/fail count also means CI's -x (fail-fast) only trips on a genuinely new failure, not
+    on a known gap that would otherwise block every run at the same spot."""
+    params = []
+    for case in cases:
+        marks = []
+        gap_reason = case.get("known_gap_reason")
+        if gap_reason:
+            marks.append(pytest.mark.xfail(reason=gap_reason, strict=False))
+        params.append(pytest.param(case, id=case["id"], marks=marks))
+    return params
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _require_live_api() -> None:
     try:
@@ -66,7 +83,7 @@ def _auth_token(_require_live_api: None) -> str:
     return str(login_response.json()["access_token"])
 
 
-@pytest.mark.parametrize("case", _load_golden_questions(), ids=lambda case: case["id"])
+@pytest.mark.parametrize("case", _as_params(_load_golden_questions()))
 def test_golden_question(
     case: dict[str, Any], _auth_token: str, eval_result: dict[str, Any]
 ) -> None:

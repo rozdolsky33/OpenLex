@@ -29,3 +29,16 @@ async def test_hybrid_search_is_deterministically_ordered(db_session, seeded_sta
     first = await hybrid_search(db_session, "security deposit")
     second = await hybrid_search(db_session, "security deposit")
     assert [r.chunk_id for r in first] == [r.chunk_id for r in second]
+
+
+async def test_hybrid_search_caps_one_chunk_per_document(
+    db_session, seeded_statutes, seeded_cases
+) -> None:
+    # park_west_raw.json chunks into 2 pieces (see conftest.py) that both score well against a
+    # habitability query -- without a per-document cap, both could land in the same top_k
+    # result set and crowd out other documents.
+    results = await hybrid_search(db_session, "warranty of habitability", top_k=2)
+    document_ids = [r.document_id for r in results]
+    assert len(document_ids) == len(set(document_ids)), (
+        f"expected at most one chunk per document, got {document_ids}"
+    )
