@@ -11,7 +11,11 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from legal_generation.conversation import ConversationNotFound, handle_query_turn
+from legal_generation.conversation import (
+    QUERY_ABSTAINED_TOTAL,
+    ConversationNotFound,
+    handle_query_turn,
+)
 from legal_generation.types import ConversationTurn
 from legal_models.orm import Conversation, Message
 from legal_models.schemas import Citation, QueryResponse
@@ -189,3 +193,41 @@ async def test_handle_query_turn_persists_the_new_turn_and_commits() -> None:
         }
     ]
     session.commit.assert_awaited_once()
+
+
+async def test_handle_query_turn_increments_abstained_counter_when_response_is_abstained() -> None:
+    session = _mock_session_that_assigns_id_on_flush()
+    generated = QueryResponse(
+        answer="I don't have enough information...", citations=[], abstained=True
+    )
+    before = QUERY_ABSTAINED_TOTAL._value.get()
+
+    with (
+        patch(
+            "legal_generation.conversation.reformulate_query",
+            AsyncMock(side_effect=lambda history, question: question),
+        ),
+        patch("legal_generation.conversation.hybrid_search", AsyncMock(return_value=[])),
+        patch("legal_generation.conversation.generate_answer", AsyncMock(return_value=generated)),
+    ):
+        await handle_query_turn(session, "an unanswerable question", user_id=uuid.uuid4())
+
+    assert QUERY_ABSTAINED_TOTAL._value.get() == before + 1
+
+
+async def test_handle_query_turn_does_not_increment_abstained_counter_when_answered() -> None:
+    session = _mock_session_that_assigns_id_on_flush()
+    generated = QueryResponse(answer="A tenant is defined as...", citations=[], abstained=False)
+    before = QUERY_ABSTAINED_TOTAL._value.get()
+
+    with (
+        patch(
+            "legal_generation.conversation.reformulate_query",
+            AsyncMock(side_effect=lambda history, question: question),
+        ),
+        patch("legal_generation.conversation.hybrid_search", AsyncMock(return_value=[PASSAGE])),
+        patch("legal_generation.conversation.generate_answer", AsyncMock(return_value=generated)),
+    ):
+        await handle_query_turn(session, "what is a tenant?", user_id=uuid.uuid4())
+
+    assert QUERY_ABSTAINED_TOTAL._value.get() == before

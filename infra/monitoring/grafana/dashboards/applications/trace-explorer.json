@@ -1,0 +1,95 @@
+{
+  "id": null,
+  "uid": "openlex-trace-explorer",
+  "title": "User Journey / Trace Explorer",
+  "description": "Per-request trace waterfalls for /query, filterable by tier and conversation. Tempo is the primary trace source; every panel here also works against Jaeger by switching the datasource, since both receive the identical trace via the OTel Collector's dual export -- see docs/superpowers/specs/2026-07-13-sre-dashboard-strategy-design.md.",
+  "tags": ["openlex", "traces", "user-journey"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "tier",
+        "type": "custom",
+        "label": "Tier",
+        "query": "silver,gold,platinum",
+        "includeAll": true,
+        "multi": false,
+        "current": { "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "conversation_id",
+        "type": "textbox",
+        "label": "Conversation ID",
+        "query": "",
+        "current": { "text": "", "value": "" }
+      }
+    ]
+  },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "nodeGraph",
+      "title": "Service graph (API → Postgres → Anthropic)",
+      "description": "Tempo's service graph, computed from span parent/child relationships -- no extra instrumentation needed beyond the existing FastAPI/SQLAlchemy/httpx auto-instrumentation.",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "queryType": "serviceMap"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "Traces (filtered by tier)",
+      "description": "TraceQL search over span.user.tier -- set the Tier variable above to narrow to one tier, or leave as All.",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 10 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "queryType": "traceql",
+          "limit": 50,
+          "query": "{ resource.service.name=\"openlex-api\" && span.user.tier =~ \"${tier:regex}\" }"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Conversation traces (one row per turn)",
+      "description": "Every trace for the Conversation ID entered above, sorted by start time -- each multi-turn conversation is a separate trace per turn (Tempo/Jaeger don't stitch multi-trace sessions into one timeline natively), so this reconstructs a conversation's shape by listing each turn's trace individually. Click a row to open its full waterfall.",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 20 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "queryType": "traceql",
+          "limit": 50,
+          "query": "{ span.conversation.id=\"${conversation_id}\" }"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "text",
+      "title": "Compare in Jaeger",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 30 },
+      "options": {
+        "mode": "markdown",
+        "content": "Tempo and Jaeger receive the **identical trace** from the OTel Collector's dual export -- copy any `trace_id` from the tables above (or from an `X-Trace-Id` response header) and paste it into [Jaeger's search-by-trace-ID](http://localhost:16686/search) (after running `scripts/observability-port-forward.sh`) to open the same trace there."
+      }
+    }
+  ]
+}

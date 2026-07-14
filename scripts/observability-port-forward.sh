@@ -26,6 +26,8 @@ kubectl port-forward -n "${NAMESPACE}" svc/kube-prometheus-stack-alertmanager 90
 pids+=($!)
 kubectl port-forward -n "${NAMESPACE}" svc/otel-collector-opentelemetry-collector 4318:4318 &
 pids+=($!)
+kubectl port-forward -n "${NAMESPACE}" svc/jaeger 16686:16686 &
+pids+=($!)
 # argocd-server serves both the UI and gRPC API over the same HTTPS port -- see
 # scripts/argocd-bootstrap.sh's own port-forward instructions, unified here so it's one
 # command instead of a separate terminal.
@@ -36,6 +38,7 @@ echo "Grafana:      http://localhost:3000  (admin password: kubectl -n ${NAMESPA
 echo "Prometheus:   http://localhost:9090"
 echo "Alertmanager: http://localhost:9093"
 echo "OTLP/HTTP:    http://localhost:4318  (for browser tracing in a later phase)"
+echo "Jaeger:       http://localhost:16686"
 echo "ArgoCD:       https://localhost:8080  (admin password: kubectl -n ${ARGOCD_NAMESPACE} get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)"
 echo
 echo "Press Ctrl-C to stop all port-forwards."

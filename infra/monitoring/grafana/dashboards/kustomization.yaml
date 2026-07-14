@@ -15,6 +15,7 @@ configMapGenerator:
     files:
       - applications/golden-signals-api.json
       - applications/tier-and-quota.json
+      - applications/trace-explorer.json
     options:
       annotations:
         grafana_folder: /tmp/dashboards/Applications
@@ -69,5 +70,29 @@ configMapGenerator:
     options:
       annotations:
         grafana_folder: /tmp/dashboards/Observability
+      labels:
+        grafana_dashboard: "1"
+  - name: openlex-grafana-dashboards-product
+    files:
+      - product/product-and-usage.json
+    options:
+      annotations:
+        grafana_folder: /tmp/dashboards/Product
+      labels:
+        grafana_dashboard: "1"
+  - name: openlex-grafana-dashboards-executive
+    files:
+      - executive/executive-overview.json
+    options:
+      annotations:
+        grafana_folder: /tmp/dashboards/Executive
+      labels:
+        grafana_dashboard: "1"
+  - name: openlex-grafana-dashboards-oncall
+    files:
+      - oncall/incident.json
+    options:
+      annotations:
+        grafana_folder: /tmp/dashboards/On-Call
       labels:
         grafana_dashboard: "1"

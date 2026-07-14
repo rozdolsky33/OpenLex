@@ -1,0 +1,93 @@
+{
+  "id": null,
+  "uid": "openlex-oncall-incident",
+  "title": "On-Call Incident",
+  "description": "Sparse, triage-first view for a paged engineer: firing alerts, golden signals clipped to the incident window, and Anthropic-specific error breakdown so a rate-limit reads distinctly from a real bug. Not for browsing -- see docs/superpowers/specs/2026-07-13-sre-dashboard-strategy-design.md. This dashboard does not depend on GA checklist item 3.11 (Alertmanager symptom-based rules) to be useful -- ALERTS already reflects kube-prometheus-stack's default infra alerts; 3.11 adds more rows here once it lands, it doesn't unblock this dashboard's existence.",
+  "tags": ["openlex", "oncall", "incident"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "30s",
+  "time": { "from": "now-30m", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Firing alerts",
+      "description": "ALERTS{alertstate=\"firing\"} -- every currently-firing alert, infra-level (kube-prometheus-stack defaults) or app-level (once GA checklist 3.11 lands), in one place.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "ALERTS{alertstate=\"firing\"}",
+          "instant": true,
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Error rate, /query + /auth (last 30m)",
+      "description": "sum(rate(openlex_http_requests_total{route=~\"/query|/auth.*\",status_class=\"5xx\"}[5m])) / sum(rate(openlex_http_requests_total{route=~\"/query|/auth.*\"}[5m]))",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(openlex_http_requests_total{route=~\"/query|/auth.*\",status_class=\"5xx\"}[5m])) / sum(rate(openlex_http_requests_total{route=~\"/query|/auth.*\"}[5m]))",
+          "legendFormat": "error rate"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Anthropic call outcomes by status (last 30m)",
+      "description": "sum by (status) (rate(openlex_anthropic_requests_total[5m])) -- rate_limited reads distinctly from api_error and success, so an Anthropic-side throttle is never mistaken for an OpenLex bug mid-incident.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (status) (rate(openlex_anthropic_requests_total[5m]))",
+          "legendFormat": "{{status}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Slowest /query traces (last 30m)",
+      "description": "TraceQL search for the slowest spans in the incident window -- click through to the full waterfall in Tempo.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "queryType": "traceql",
+          "limit": 20,
+          "query": "{ resource.service.name=\"openlex-api\" && name=\"POST /query\" }"
+        }
+      ]
+    }
+  ]
+}

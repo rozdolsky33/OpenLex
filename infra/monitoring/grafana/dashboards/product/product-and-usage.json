@@ -1,0 +1,104 @@
+{
+  "id": null,
+  "uid": "openlex-product-and-usage",
+  "title": "Product & Usage",
+  "description": "Usage-shaped view for product decisions: query volume by tier, abstain rate, and quota-exhaustion frequency. See docs/superpowers/specs/2026-07-13-sre-dashboard-strategy-design.md.",
+  "tags": ["openlex", "product"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "",
+  "time": { "from": "now-7d", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Query volume by tier (rate, 1h)",
+      "description": "sum by (tier) (rate(openlex_query_requests_total[1h])) * 3600",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "reqph", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (tier) (rate(openlex_query_requests_total[1h])) * 3600",
+          "legendFormat": "{{tier}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Abstain rate (%, 1h)",
+      "description": "100 * sum(rate(openlex_query_abstained_total[1h])) / sum(rate(openlex_http_requests_total{route=\"/query\",status_class=\"2xx\"}[1h])) -- share of successful /query calls that abstained rather than answering.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "100 * sum(rate(openlex_query_abstained_total[1h])) / sum(rate(openlex_http_requests_total{route=\"/query\",status_class=\"2xx\"}[1h]))",
+          "legendFormat": "abstain rate"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Quota-exhaustion frequency by tier (rate, 1h)",
+      "description": "sum by (tier) (rate(openlex_query_quota_exceeded_total[1h])) * 3600 -- how often each tier's users hit their quota wall.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "reqph", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (tier) (rate(openlex_query_quota_exceeded_total[1h])) * 3600",
+          "legendFormat": "{{tier}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Total accepted queries (7d)",
+      "description": "sum(increase(openlex_query_requests_total[7d])) by (tier)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (tier) (increase(openlex_query_requests_total[7d]))",
+          "legendFormat": "{{tier}}",
+          "instant": true
+        }
+      ]
+    }
+  ]
+}
