@@ -1,0 +1,53 @@
+# .github/workflows/integration.yml
+name: integration
+
+on:
+  pull_request:
+    paths:
+      - "packages/legal_retrieval/**"
+      - "packages/legal_parsing/**"
+      - "packages/legal_models/**"
+      - "packages/shared/**"
+      - "pipelines/**"
+      - "migrations/**"
+      - "tests/integration/**"
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: openlex_test
+          POSTGRES_DB: openlex_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5544:5432
+        options: >-
+          --health-cmd "pg_isready -U openlex_test -d openlex_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    # Same three dummy values as api.yml/pipelines.yml -- openlex_shared.config.Settings
+    # requires these at import time; tests/integration never makes a real Anthropic call or
+    # reads JWT_SECRET_KEY, so placeholders are correct here.
+    env:
+      ANTHROPIC_API_KEY: ci-placeholder
+      DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
+      JWT_SECRET_KEY: ci-placeholder-not-a-real-secret-32chars
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages
+
+      - name: Apply migrations
+        run: |
+          for f in migrations/postgres/*.sql; do
+            echo "Applying $f"
+            PGPASSWORD="" psql -h localhost -p 5544 -U openlex_test -d openlex_test -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - run: uv run pytest tests/integration -v
