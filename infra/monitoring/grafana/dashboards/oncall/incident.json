@@ -34,7 +34,7 @@
       "id": 2,
       "type": "timeseries",
       "title": "Error rate, /query + /auth (last 30m)",
-      "description": "sum(rate(openlex_http_requests_total{route=~\"/query|/auth.*\",status_class=\"5xx\"}[5m])) / sum(rate(openlex_http_requests_total{route=~\"/query|/auth.*\"}[5m]))",
+      "description": "(sum(rate(openlex_http_requests_total{route=~\"/query|/auth.*\",status_class=\"5xx\"}[5m])) OR on() vector(0)) / sum(rate(openlex_http_requests_total{route=~\"/query|/auth.*\"}[5m]))",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
@@ -46,7 +46,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(openlex_http_requests_total{route=~\"/query|/auth.*\",status_class=\"5xx\"}[5m])) / sum(rate(openlex_http_requests_total{route=~\"/query|/auth.*\"}[5m]))",
+          "expr": "(sum(rate(openlex_http_requests_total{route=~\"/query|/auth.*\",status_class=\"5xx\"}[5m])) OR on() vector(0)) / sum(rate(openlex_http_requests_total{route=~\"/query|/auth.*\"}[5m]))",
           "legendFormat": "error rate"
         }
       ]
