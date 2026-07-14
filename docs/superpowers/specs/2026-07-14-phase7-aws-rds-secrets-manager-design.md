@@ -22,9 +22,11 @@ manifest form but has never actually run.
 completing the existing Secrets Manager + External Secrets Operator manifests (7.2),
 documenting the deliberate environment isolation between local kind and cloud (7.3), Terraform
 remote state (7.4, closes the old 6.4), a Postgres backup/DR strategy (7.5, closes the old
-6.5), and a cheap, AWS-native cloud observability strategy for `eks-demo` with Grafana as the
-shared viewing layer across both environments (7.6, not in the original roadmap — added during
-this design pass).
+6.5), a cheap AWS-native cloud observability strategy with Grafana as the shared viewing layer
+(7.6), a two-node-group topology mirroring kind's observability/apps separation with real
+multi-AZ HA (7.7), static `apps/web` hosting via S3 + CloudFront (7.8), and ingress + unified
+auth for the publicly-exposed observability stack (7.9) — none of 7.6-7.9 were in the original
+roadmap sketch; all added during this design pass.
 
 **Explicitly out of scope:** actually running `terraform apply` against a real AWS account, or
 any other live AWS deployment/verification — confirmed with the user: this phase produces
@@ -264,6 +266,132 @@ CloudWatch Metrics Insights (a materially different query language) or need para
 CloudWatch-flavored versions. Likely the latter, for at least the panels that matter most
 (Golden Signals) — resolve during implementation, not asserted here as settled.
 
+## 7.7 — Node topology: mirroring kind's separation, cloud-adjusted
+
+**Problem:** `eks.tf` currently provisions **one** managed node group (`t4g.medium`, SPOT,
+1-2 instances) — no separation between observability/ArgoCD and application workloads at all,
+unlike kind's deliberate 3-worker split (`docs/infrastructure/kubernetes-topology.md`).
+
+**Design:** two managed node groups, replacing the single `default` one, reusing kind's exact
+taint/label scheme so `infra/argocd/apps/kind/app-*.yaml`'s existing `nodeSelector`/
+`tolerations` blocks carry over to their `eks-demo` equivalents unchanged:
+
+- **`observability` node group:** `t4g.large` (2 vCPU/8GB — larger than the apps group,
+  deliberately: kube-prometheus-stack + Grafana + Tempo + Jaeger + Loki + ArgoCD all together
+  need real headroom kind's minimal request/limit values only just fit into). SPOT capacity
+  (matches this repo's existing cost-conscious default; interruption risk is an accepted
+  tradeoff for a demo cluster, not fixed to on-demand). `min_size=1, max_size=2,
+  desired_size=1` — letting the ASG scale to a 2nd node automatically only if pod resource
+  requests genuinely can't fit on one, rather than hand-deciding node count upfront. Tainted
+  `openlex.dev/workload=observability:NoSchedule`, labeled to match.
+- **`apps` node group:** `t4g.medium` (matches today's instance type), SPOT,
+  `min_size=2, max_size=2, desired_size=2` — fixed at 2, one per AZ. Unlike kind (containers on
+  one Docker daemon, no real host/zone isolation), this VPC already provisions 2 real AZs
+  (`vpc.tf`), so this is genuine multi-AZ separation, not kind's honestly-caveated
+  best-effort version.
+- **`openlex-api` anti-affinity becomes `requiredDuringSchedulingIgnoredDuringExecution`**
+  (hard), not kind's `preferred` (soft) — safe here specifically because EKS managed node
+  groups replace a drained/failed node automatically (unlike kind's fixed 2-node ceiling,
+  where a hard rule risked a permanently `Pending` replica). `topologyKey:
+  topology.kubernetes.io/zone` (AZ-level), not `kubernetes.io/hostname` — the semantically
+  correct choice now that real zones exist to spread across, not just an incidental side
+  effect of 1-node-per-zone.
+- **New:** the `aws-ebs-csi-driver` EKS addon (`aws_eks_addon` resource) with its own IRSA
+  role (`iam_irsa_ebs_csi.tf`, same pattern as `external-secrets`/`external-dns`) — required
+  for Prometheus/Loki/Tempo's persistent volumes on real `gp3` EBS storage; not present in
+  `eks.tf` today.
+- New `infra/kubernetes/overlays/eks-demo/patch-resources.yaml` (doesn't exist yet — only the
+  kind overlay has one today), mirroring kind's `nodeSelector`/affinity pattern with the hard/
+  zone-level adjustment above.
+
+```mermaid
+flowchart TB
+    subgraph EKS["eks-demo node groups"]
+        subgraph ObsNG["observability node group<br/>t4g.large, SPOT, 1-2 nodes"]
+            direction TB
+            ArgoCD2["ArgoCD"]
+            Obs["Prometheus, Grafana,<br/>Tempo, Jaeger, Loki"]
+        end
+        subgraph AppsNG["apps node group<br/>t4g.medium, SPOT, fixed 2 nodes, 1/AZ"]
+            direction LR
+            AZ1["AZ 1: openlex-api replica 1"]
+            AZ2["AZ 2: openlex-api replica 2"]
+        end
+    end
+    style ObsNG fill:#f4f0fa,stroke:#5a4a8a
+    style AppsNG fill:#e8f4ea,stroke:#4a7a52
+```
+
+## 7.8 — Static content (`apps/web`) via S3 + CloudFront
+
+**Problem:** `apps/web` has never had a production build — it only ever runs as a Vite **dev
+server** (`npm run dev`) in a container, even in the `eks-demo` overlay (its own Dockerfile
+comment already documents this: "not a production nginx build"). Serving purely static assets
+from a running Node.js process is neither the cloud-native pattern nor cheap at scale.
+
+**Design:**
+
+- `apps/web` gains a real production build path (`vite build` → static `dist/`) — this is new,
+  not something the kind/compose path needs to change (those stay dev-server-based, unaffected).
+- New Terraform: a private `aws_s3_bucket` (not public — CloudFront reaches it via Origin
+  Access Control, not a public bucket policy) plus an `aws_cloudfront_distribution` in front of
+  it. CloudFront's edge network is global by default, Europe included automatically — no
+  special per-region configuration needed unless deliberately *restricting* to fewer regions,
+  which isn't the goal here. ACM certificate for the CloudFront custom domain must be
+  provisioned in `us-east-1` specifically — a real, easy-to-miss AWS requirement regardless of
+  the rest of the infrastructure's region.
+- **Domain split, replacing today's routing:** `app.<domain>` moves from
+  ingress-nginx→web-pod to CloudFront/S3 (the static build); API traffic gets its own
+  `api.<domain>` → ingress-nginx → `openlex-api` Service. `external-dns` already automates
+  Route53 records from ingress annotations for the API side; `app.<domain>`'s record becomes a
+  Route53 alias straight to the CloudFront distribution instead.
+- **Real build-time-vs-runtime distinction to flag:** kind/compose inject `VITE_API_BASE_URL`
+  at container *start* (`infra/kubernetes/base/web/deployment.yaml`'s `env:` block) because
+  Vite's dev server reads it live. A static `vite build` bakes `VITE_API_BASE_URL` in at
+  *build* time instead — the new CI workflow must set it to the real `api.<domain>` before
+  running `vite build`, not after.
+- New `.github/workflows/deploy-static.yml`: `on: push: branches: [main], paths:
+  ["apps/web/**"]` — `npm run build` (with `VITE_API_BASE_URL=https://api.<domain>` baked in),
+  `aws s3 sync dist/ s3://<bucket> --delete`, `aws cloudfront create-invalidation
+  --distribution-id <id> --paths "/*"`. AWS access via GitHub's OIDC federation + a dedicated
+  IAM role (new `iam_oidc_github_actions.tf`) — no static AWS access keys in GitHub secrets,
+  matching this project's established "no static cloud credentials" precedent (IRSA
+  everywhere else).
+
+```mermaid
+flowchart LR
+    Push["push to main<br/>(apps/web/** changed)"] --> Build["vite build<br/>(VITE_API_BASE_URL baked in)"]
+    Build -- "aws s3 sync" --> S3[("S3 bucket<br/>(private, OAC-only)")]
+    S3 --> CF["CloudFront<br/>(global edge, Europe included)"]
+    CF --> User(["Browser: app.&lt;domain&gt;"])
+    User -- "API calls" --> API["api.&lt;domain&gt; -> ingress-nginx -> openlex-api"]
+```
+
+## 7.9 — Ingress + unified auth for the observability stack
+
+**Problem:** once `eks-demo` is actually internet-facing, Grafana/Prometheus/Jaeger need real
+exposure — but Prometheus and Jaeger have **no built-in authentication at all**, so there's
+nothing to "share a password with" on their end without something in front of them regardless.
+
+**Design:** `ingress-nginx` (already the chosen, working ingress controller in this
+scaffolding — not introducing Gateway API alongside it as a second, parallel concept) +
+`oauth2-proxy` in front of the three tools that need it:
+
+- New ArgoCD Application `app-oauth2-proxy.yaml` (Helm chart `oauth2-proxy/oauth2-proxy`).
+- New Ingress resources for Grafana, Prometheus, and Jaeger (none exist today), each annotated
+  with `nginx.ingress.kubernetes.io/auth-url`/`auth-signin` pointing at `oauth2-proxy`'s
+  endpoints — the standard, well-established ingress-nginx + oauth2-proxy integration pattern.
+  One real login gates all three.
+- **Scope decision, stated explicitly rather than silently overclaiming:** `ArgoCD` keeps its
+  own existing native login (`argocd-admin-externalsecret.yaml`, already real and secure) —
+  it is **not** additionally gated by `oauth2-proxy` in this pass. Putting ArgoCD behind
+  `oauth2-proxy` too would mean either double-authenticating (proxy gate, then ArgoCD's own
+  login) or reconfiguring ArgoCD's built-in Dex to federate identity from `oauth2-proxy`
+  directly — a real, separate piece of work, not assumed solved here. So the honest outcome is
+  **one shared login covers Grafana + Prometheus + Jaeger; ArgoCD stays on its own separate
+  (but already secure) login** — not literally "one password for all four." Flagged as a
+  possible future enhancement (ArgoCD OIDC/Dex federation), not built now.
+
 ## Testing (no live deployment this phase — see "Explicitly out of scope")
 
 - `terraform validate` and `terraform fmt -check` on the full `infra/terraform/` directory
@@ -279,6 +407,18 @@ CloudWatch-flavored versions. Likely the latter, for at least the panels that ma
 - 7.3 has no new code to test — its "testing" is confirming `scripts/kind-secrets-bootstrap.sh`
   and every local kind manifest are genuinely untouched by this phase (a diff check, not a
   functional test).
+- 7.7: confirm the two-node-group `terraform plan` shows the expected resource diff (one
+  group replaced by two, new addon + IRSA role, no unexpected changes to `vpc.tf`/unrelated
+  resources), and manually verify the reused kind taint/label strings are byte-identical
+  between `infra/argocd/apps/kind/app-*.yaml` and their new `eks-demo` counterparts — a typo'd
+  taint value is a silent scheduling failure, not a `terraform validate` error.
+- 7.8: `apps/web`'s new production build can be tested locally right now, independent of any
+  AWS resource — `cd apps/web && VITE_API_BASE_URL=https://example.com npm run build` and
+  confirm `dist/` contains real static assets referencing the baked-in API URL. This is the
+  one piece of 7.7-7.9 genuinely testable without touching AWS at all.
+- 7.9: manual schema cross-check of the `oauth2-proxy` Helm values and the new Ingress
+  `auth-url`/`auth-signin` annotations against oauth2-proxy's actual documented ingress-nginx
+  integration guide — same "cite what was checked against" discipline as 7.2's ESO review.
 
 ## Open questions / risks
 
@@ -295,3 +435,18 @@ CloudWatch-flavored versions. Likely the latter, for at least the panels that ma
   database password into Terraform state means that state file itself becomes sensitive —
   directly motivates 7.4 (remote state, ideally with S3 bucket encryption + restricted IAM
   access) landing *before* or *alongside* 7.1, not as a purely independent follow-up.
+- **SPOT interruption on the observability node group (7.7):** a 2-hour-notice SPOT reclaim
+  would briefly take Grafana/Prometheus/Tempo/Jaeger/ArgoCD down together (they're all on the
+  same node group) — acceptable for a demo cluster prioritizing cost, but worth naming
+  explicitly rather than leaving as an implicit assumption. Switching that one node group to
+  `capacity_type = "ON_DEMAND"` is a one-line change if this ever becomes a real problem.
+- **`oauth2-proxy` provider choice (7.9) not yet decided:** GitHub OAuth (no password
+  management, fits a portfolio/demo context well) vs. a simple static htpasswd-style provider
+  (no external OAuth app registration needed) — both are legitimate, this is a implementation-
+  time choice, not a design blocker.
+- **CloudFront + ACM's `us-east-1`-only requirement (7.8):** if `infra/terraform/`'s AWS
+  provider is configured for a different primary region (matches `var.region`, currently
+  `us-east-1` already — so likely a non-issue in practice), CloudFront's ACM certificate still
+  needs its own explicit `us-east-1` provider alias regardless, since this is a CloudFront-
+  specific requirement independent of where everything else lives. Confirm at implementation
+  time, don't assume it's automatically satisfied just because the default region matches.

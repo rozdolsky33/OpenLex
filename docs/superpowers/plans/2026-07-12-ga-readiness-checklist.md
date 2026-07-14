@@ -4,10 +4,10 @@ Flat tracking sheet — check items off as PRs merge. Full reasoning, acceptance
 file-level detail for each item live in
 `docs/superpowers/plans/2026-07-12-ga-readiness-roadmap.md`; this file is just the scoreboard.
 
-**Progress: 37 / 49 items complete (76%)** — update this line by hand as boxes get checked.
-(Recount 2026-07-14: denominator grew with Phase 6's completion and the addition of Phase 7,
-which absorbed the old 6.4/6.5 plus new AWS RDS/Secrets Manager/cloud-observability scope;
-7.3 closed as "documentation, not new code" during design review.)
+**Progress: 37 / 52 items complete (71%)** — update this line by hand as boxes get checked.
+(Recount 2026-07-14: Phase 7 grew again with 7.7-7.9 — node topology, static CDN hosting,
+observability ingress/auth — added during design review after further requirements came in.
+Progress % naturally dips as scope is discovered, not regresses; 37 done items is unchanged.)
 
 ## Phase 0 — Prep
 - [ ] 0.1 Fix `pipelines.yml` to actually run `apps/worker/tests`
@@ -280,6 +280,20 @@ Design/build only this pass, no live AWS deployment (confirmed with the user).
       self-hosted stack — cheap, no dedicated observability node needed on eks-demo's
       currently-single-node cluster. One small self-hosted Grafana stays the shared viewing
       layer across kind and eks-demo (CloudWatch + X-Ray as Grafana datasources).
+- [ ] 7.7 Node topology (added during design): split the single EKS node group into
+      `observability` (t4g.large, mirrors kind's dedicated tainted node) + `apps` (t4g.medium,
+      fixed 2 nodes/1 per AZ, real multi-AZ HA with **hard** anti-affinity — stronger than
+      kind's soft-only version, since EKS can actually replace a drained node). Adds the
+      `aws-ebs-csi-driver` addon (not present today) for Prometheus/Loki/Tempo's PVs.
+- [ ] 7.8 Static content (added during design): `apps/web` gains a real production build
+      (`vite build`, not the dev-server-in-a-container it's always been) served via S3 +
+      CloudFront, with a new `deploy-static.yml` triggered on push to `main`. Splits
+      `app.<domain>` (CloudFront/S3) from `api.<domain>` (ingress-nginx, unchanged).
+- [ ] 7.9 Ingress + unified auth for the observability stack (added during design):
+      `oauth2-proxy` in front of Grafana/Prometheus/Jaeger via ingress-nginx (one shared
+      login for all three — neither has real built-in auth to unify otherwise). ArgoCD keeps
+      its own separate, already-secure native login rather than double-gating it — stated
+      explicitly as a scope decision, not "all four share one password."
 
 ## Sign-off gates (not code — human decisions required before flipping to GA)
 - [ ] Legal counsel has reviewed and approved ToS/privacy text (Phase 4)

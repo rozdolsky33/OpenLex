@@ -405,6 +405,24 @@ developer ever needs credentials for both at once. See the spec's 7.3 for the fu
       shape already proven on kind/compose (just different exporters). One small self-hosted
       Grafana (chart only, not the full bundle) with CloudWatch + X-Ray as datasources stays
       the single shared viewing layer across kind and eks-demo.
+- [ ] **7.7** Node topology (added during design): split the single EKS node group into
+      `observability` (t4g.large, mirrors kind's dedicated tainted node — reuses its exact
+      taint/label scheme, so `infra/argocd/apps/kind/app-*.yaml`'s nodeSelector/tolerations
+      carry over unchanged) + `apps` (t4g.medium, fixed 2 nodes/1 per real AZ — unlike kind's
+      same-Docker-daemon fake nodes). `openlex-api`'s anti-affinity becomes hard
+      (`required`), not kind's soft `preferred` — safe here since EKS can replace a drained
+      node automatically. Adds the missing `aws-ebs-csi-driver` addon for observability PVs.
+- [ ] **7.8** Static content via CDN (added during design): `apps/web` gains its first real
+      production build (`vite build` — it has only ever run as a Vite dev server, even on
+      eks-demo) served via S3 + CloudFront (global edge, Europe included by default), with a
+      new `deploy-static.yml` triggered on push to `main`. Splits `app.<domain>`
+      (CloudFront/S3) from `api.<domain>` (ingress-nginx, unchanged) — a real
+      build-time-vs-runtime distinction for `VITE_API_BASE_URL` to get right.
+- [ ] **7.9** Ingress + unified auth for the observability stack (added during design):
+      `oauth2-proxy` in front of Grafana/Prometheus/Jaeger via ingress-nginx (neither
+      Prometheus nor Jaeger has real built-in auth, so there's nothing to unify on their end
+      without a proxy regardless). ArgoCD explicitly keeps its own separate native login
+      rather than being silently claimed as "also unified" — stated as a scope decision.
 
 ### Checkpoint: Phase 7
 - [ ] `terraform validate`/`terraform plan` clean against the existing local-state backend (no
@@ -414,6 +432,12 @@ developer ever needs credentials for both at once. See the spec's 7.3 for the fu
 - [ ] `scripts/kind-secrets-bootstrap.sh` and every local kind manifest confirmed genuinely
       untouched by this phase (verifies 7.3's isolation guarantee held in practice, not just
       in the design doc)
+- [ ] The reused kind taint/label strings (7.7) are confirmed byte-identical between the kind
+      and eks-demo manifests — a silent typo here is a scheduling failure, not a
+      `terraform validate` error
+- [ ] `apps/web`'s new production build (7.8) verified locally (`npm run build` produces real
+      static assets referencing the baked-in API URL) — the one piece of 7.7-7.9 testable
+      without touching AWS at all
 
 ---
 
