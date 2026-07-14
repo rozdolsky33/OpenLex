@@ -13,6 +13,9 @@ spec:
     - https://charts.jetstack.io
     - https://kubernetes-sigs.github.io/external-dns
     - https://charts.external-secrets.io
+    - https://open-telemetry.github.io/opentelemetry-helm-charts
+    - https://grafana.github.io/helm-charts
+    - https://jaegertracing.github.io/helm-charts
   destinations:
     - namespace: "*"
       server: https://kubernetes.default.svc
