@@ -48,6 +48,20 @@ Local `kind` needs none of this — it's local-only, no AWS involved.
    StorageClass (`infra/kubernetes/overlays/eks-demo/storageclass-gp3.yaml`) needs to be the
    *only* default so PVCs without an explicit `storageClassName` bind correctly.
 
+## Static site deploy (`apps/web`, 7.8)
+
+After `terraform apply`, set these as GitHub repository (or `production` environment)
+**variables** (not secrets — none of these are sensitive), Settings -> Secrets and variables ->
+Actions -> Variables:
+
+- `OPENLEX_DOMAIN` — the same value as `var.domain_name`.
+- `OPENLEX_WEB_BUCKET` — `terraform output web_bucket_name`.
+- `OPENLEX_CLOUDFRONT_DISTRIBUTION_ID` — `terraform output cloudfront_distribution_id`.
+- `GITHUB_ACTIONS_DEPLOY_WEB_ROLE_ARN` — `terraform output github_actions_deploy_web_role_arn`.
+
+`.github/workflows/deploy-static.yml` then deploys automatically on every push to `main` that
+touches `apps/web/**`.
+
 ## State
 
 Local state by default (see `backend.tf`) — reasonable for a demo cluster you tear down and

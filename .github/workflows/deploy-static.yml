@@ -1,0 +1,48 @@
+# .github/workflows/deploy-static.yml
+name: deploy-static
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/web/**"
+      - ".github/workflows/deploy-static.yml"
+
+permissions:
+  id-token: write # required for GitHub OIDC -> AWS
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: apps/web/.nvmrc
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - run: npm ci
+
+      - name: Build (production, API base URL baked in)
+        env:
+          VITE_API_BASE_URL: https://api.${{ vars.OPENLEX_DOMAIN }}
+        run: npm run build
+
+      - name: Configure AWS credentials (OIDC, no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.GITHUB_ACTIONS_DEPLOY_WEB_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Sync to S3
+        run: aws s3 sync dist/ "s3://${{ vars.OPENLEX_WEB_BUCKET }}" --delete
+
+      - name: Invalidate CloudFront
+        run: aws cloudfront create-invalidation --distribution-id "${{ vars.OPENLEX_CLOUDFRONT_DISTRIBUTION_ID }}" --paths "/*"
