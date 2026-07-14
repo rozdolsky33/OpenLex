@@ -73,9 +73,10 @@ New/modified files, grouped by task:
 - **Task 3:** `infra/argocd/apps/eks-demo/README.md` (new)
 - **Task 4:** `infra/terraform/eks.tf`, `infra/terraform/variables.tf` (modified),
   `infra/terraform/iam_irsa_ebs_csi.tf` (new)
-- **Task 5:** `infra/kubernetes/overlays/eks-demo/{patch-resources.yaml,pdb-openlex-api.yaml,
-  storageclass-gp3.yaml}` (new), `infra/kubernetes/overlays/eks-demo/kustomization.yaml`
-  (modified)
+- **Task 5:** `infra/kubernetes/overlays/eks-demo/{pdb-openlex-api.yaml,storageclass-gp3.yaml}`
+  (new), `infra/kubernetes/overlays/eks-demo/{patch-resources.yaml,kustomization.yaml}`
+  (modified — `patch-resources.yaml` already exists from the original eks-demo scaffolding
+  commit; this task overwrites its content entirely, see Task 5's own note)
 
 ---
 
@@ -769,16 +770,23 @@ git commit -m "Split eks-demo into observability/apps node groups, add EBS CSI d
 ### Task 5: Node topology — eks-demo Kubernetes overlay (7.7 cont'd)
 
 **Files:**
-- Create: `infra/kubernetes/overlays/eks-demo/patch-resources.yaml`,
-  `infra/kubernetes/overlays/eks-demo/pdb-openlex-api.yaml`
-- Modify: `infra/kubernetes/overlays/eks-demo/kustomization.yaml`
+- Create: `infra/kubernetes/overlays/eks-demo/pdb-openlex-api.yaml`
+- Modify: `infra/kubernetes/overlays/eks-demo/{patch-resources.yaml,kustomization.yaml}`
 
 **Interfaces:**
 - Consumes: the `openlex.dev/workload: apps` label from Task 4's `eks.tf`,
   `topology.kubernetes.io/zone` (a standard EKS-node label, not something this project sets).
 - Produces: nothing consumed by a later task.
 
-- [ ] **Step 1: Write `patch-resources.yaml`**
+**Note: `patch-resources.yaml` already exists** — it predates this whole plan, from the
+original eks-demo scaffolding commit (`f95730a`), and holds lean, single-node-group-era
+resource requests/limits with no `nodeSelector`/anti-affinity at all (discovered live during
+Task 2's kustomize render, which is why Task 2's "expect this render to fail" step didn't
+actually fail — the old file already satisfied `kustomization.yaml`'s `patches:` reference).
+This task's Step 1 **overwrites it entirely** with the content below — this is a `Modify`, not
+a `Create`, and the old content is fully replaced, not merged with.
+
+- [ ] **Step 1: Overwrite `patch-resources.yaml`**
 
 ```yaml
 # infra/kubernetes/overlays/eks-demo/patch-resources.yaml
