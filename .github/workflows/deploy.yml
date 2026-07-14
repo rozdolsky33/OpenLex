@@ -1,0 +1,74 @@
+# .github/workflows/deploy.yml
+name: deploy
+
+on:
+  push:
+    branches:
+      - develop
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_OWNER: ${{ github.repository_owner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push openlex-api
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/openlex-api:${{ github.sha }}
+
+      - name: Build and push openlex-worker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/worker/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/openlex-worker:${{ github.sha }}
+
+      - name: Build and push openlex-web
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/web
+          file: apps/web/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/openlex-web:${{ github.sha }}
+
+      - name: Bump image tags in the kind overlay
+        run: |
+          curl -sL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.4.3/kustomize_v5.4.3_linux_amd64.tar.gz" | tar xz
+          cd infra/kubernetes/overlays/kind
+          ../../../../kustomize edit set image \
+            openlex-api=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/openlex-api:${{ github.sha }} \
+            openlex-worker=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/openlex-worker:${{ github.sha }} \
+            openlex-web=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/openlex-web:${{ github.sha }}
+
+      - name: Commit and push the tag bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add infra/kubernetes/overlays/kind/kustomization.yaml
+          if git diff --cached --quiet; then
+            echo "No image-tag changes to commit (rebuilt identical digests)."
+          else
+            git commit -m "chore: deploy ${{ github.sha }}"
+            git push origin HEAD:develop
+          fi
