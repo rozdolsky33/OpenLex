@@ -14,7 +14,8 @@ Local `kind` needs none of this — it's local-only, no AWS involved.
 
 1. Pick the domain (or a subdomain you're happy to delegate), set it in
    `terraform.tfvars` (copy `terraform.tfvars.example`).
-2. `terraform init && terraform apply`.
+2. `terraform init -backend-config=backend.hcl && terraform apply` (see "Remote state" below
+   for the one-time backend bootstrap this needs first).
 3. `terraform output route53_name_servers` — set these as the NS records for that domain/
    subdomain at your registrar. Kick this off early; propagation can take a while.
 4. Hand-copy `terraform output external_dns_role_arn`, `external_secrets_role_arn`, and
@@ -64,9 +65,9 @@ touches `apps/web/**`.
 
 ## State
 
-Local state by default (see `backend.tf`) — reasonable for a demo cluster you tear down and
-recreate between sessions (the cheapest way to run EKS, since the control plane bills hourly
-regardless of workload). Switch to an S3+DynamoDB backend once that stops being true.
+`backend.tf` is configured for an S3 backend (not local-by-default) — `terraform init` requires
+either `-backend-config` or explicit `-backend=false`. See "Remote state" below for the
+one-time bootstrap and migration steps.
 
 ## Remote state
 
