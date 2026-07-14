@@ -1,0 +1,41 @@
+# infra/argocd/apps/eks-demo/app-postgres-exporter.yaml
+#
+# Identical to infra/argocd/apps/kind/app-postgres-exporter.yaml. config.datasourceSecret
+# (in the shared values-base.yaml) points at the same openlex-secrets/POSTGRES_EXPORTER_DSN
+# key kind uses -- here it resolves to RDS (Phase 7a Task 1's rds.tf writes that key), not the
+# in-cluster StatefulSet kind's key resolves to. Deliberately not in the `observability`
+# namespace (same as kind): Prometheus already watches ServiceMonitors across every namespace
+# (serviceMonitorSelectorNilUsesHelmValues: false, in the shared kube-prometheus-stack
+# values-base.yaml), so this doesn't need to live in `observability` to be scraped, and
+# staying in `openlex` avoids duplicating DB credentials into a second namespace.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgres-exporter
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: openlex-eks-demo
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: prometheus-postgres-exporter
+      targetRevision: "8.1.1"
+      helm:
+        valueFiles:
+          - $values/infra/monitoring/postgres-exporter/values-base.yaml
+        valuesObject:
+          nodeSelector:
+            openlex.dev/workload: apps
+    - repoURL: https://github.com/rozdolsky33/OpenLex.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openlex
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
