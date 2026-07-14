@@ -4,9 +4,9 @@ Flat tracking sheet — check items off as PRs merge. Full reasoning, acceptance
 file-level detail for each item live in
 `docs/superpowers/plans/2026-07-12-ga-readiness-roadmap.md`; this file is just the scoreboard.
 
-**Progress: 31 / 43 items complete (72%)** — update this line by hand as boxes get checked.
-(Recount 2026-07-14: prior "20/37" had drifted stale — items added during the observability
-work, e.g. 3.12-3.14, were never folded into the denominator.)
+**Progress: 36 / 48 items complete (75%)** — update this line by hand as boxes get checked.
+(Recount 2026-07-14: denominator grew with Phase 6's completion and the addition of Phase 7,
+which absorbed the old 6.4/6.5 plus new AWS RDS/Secrets Manager scope.)
 
 ## Phase 0 — Prep
 - [ ] 0.1 Fix `pipelines.yml` to actually run `apps/worker/tests`
@@ -238,12 +238,36 @@ legal product — see CLAUDE.md's "Why this project exists" section)
       by loosening assertions. `apps/api` rebuilt/redeployed with the fix and re-verified live
       against the running cluster.
 
-## Phase 6 — CI/CD & infra hardening 🟡 partial
-- [ ] 6.1 `tests/integration` gated in CI (not manual-only)
-- [ ] 6.2 Real e2e smoke test replaces the empty stub
-- [ ] 6.3 Deploy workflow automated, or manual runbook documented
-- [ ] 6.4 Terraform remote state (S3 + DynamoDB)
-- [ ] 6.5 Postgres backup/DR strategy defined and documented
+## Phase 6 — CI/CD & infra hardening — ✅ done 2026-07-14 (PRs #27, #28, #29, #30 + a direct
+docs commit, all merged to `develop` then promoted to `main` via #31)
+- [x] 6.1 `tests/integration` gated in CI — real Postgres+pgvector service container
+      (`integration.yml`), not manual-only anymore
+- [x] 6.2 Real e2e smoke test replaces the empty stub — `tests/end_to_end/test_smoke.py`,
+      gated on every PR (`smoke.yml`)
+- [x] 6.3 Deploy workflow automated — `deploy.yml`: real multi-arch (amd64+arm64) build, push
+      to GHCR, GitOps-commit back to `develop`, ArgoCD auto-syncs. Live-verified twice,
+      including finding and fixing two real bugs (`root-kind.yaml`'s stale `targetRevision`;
+      the QEMU/multi-arch crash) that only surfaced by watching the pipeline actually run.
+- [x] Environment/branch model (added during design, not originally scoped): `develop` =
+      staging (kind+ArgoCD), `main` = reserved for a real future production/EKS environment.
+      See `docs/infrastructure/dev-workflow-and-branching.md`.
+- [x] Docker-compose observability parity (added during design, not originally scoped):
+      OTel Collector + Prometheus + Grafana + Jaeger added to the local dev loop.
+- 6.4 (Terraform remote state) and 6.5 (Postgres backup/DR) **moved to Phase 7** below — see
+      the roadmap doc's Phase 6 "Scope note" for why.
+
+## Phase 7 — AWS-flavored production path: RDS, Secrets Manager, External Secrets 🔴 blocker
+Not yet brainstormed/specced — see `docs/superpowers/plans/2026-07-12-ga-readiness-roadmap.md`'s
+Phase 7 for the current scope sketch (RDS, Secrets Manager + External Secrets Operator,
+Terraform remote state, Postgres backup/DR, an explicit-opt-in AWS-backed local bootstrap
+option alongside the existing local-only path).
+- [ ] 7.1 Design + implement: RDS Postgres (pgvector) for production, replacing the in-cluster
+      StatefulSet
+- [ ] 7.2 Design + implement: AWS Secrets Manager + External Secrets Operator for
+      production/EKS
+- [ ] 7.3 Bootstrap flexibility: explicit opt-in AWS-backed option in the local bootstrap flow
+- [ ] 7.4 Terraform remote state (S3 + DynamoDB) — was 6.4
+- [ ] 7.5 Postgres backup/DR strategy — was 6.5, likely resolved by 7.1's RDS backups
 
 ## Sign-off gates (not code — human decisions required before flipping to GA)
 - [ ] Legal counsel has reviewed and approved ToS/privacy text (Phase 4)

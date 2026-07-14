@@ -2,10 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan phase-by-phase. Phases
-> 1-2 are specified at file/diff level and are ready to execute now. Phases 3-6 are specified
+> 1-2 are specified at file/diff level and are ready to execute now. Phases 3-7 are specified
 > at task level only — write a follow-up detailed plan (superpowers:writing-plans) for each
 > phase immediately before starting it, per superpowers:incremental-implementation (don't
-> front-load implementation detail for work that's still weeks out and may shift).
+> front-load implementation detail for work that's still weeks out and may shift). Phases 1-6
+> are done as of 2026-07-14; Phase 7 is not yet brainstormed/specced.
 
 **Goal:** Take OpenLex from its current ~50% "demo-grade" state (assessed 2026-07-12) to GA:
 public-facing, safe under abuse/scale, observable in production, legally compliant, and backed
@@ -307,30 +308,95 @@ top N Appellate Division landlord-tenant cases") rather than expanding indefinit
 
 ---
 
-## Phase 6 — CI/CD & infra hardening (final pass before GA) 🟡
+## Phase 6 — CI/CD & infra hardening ✅ done 2026-07-14
 
-**Why:** Infra/CI foundations are real (not vaporware) but self-documented as demo-grade:
-local Terraform state, no deploy workflow, integration/e2e tests are manual-only, single-node
-Postgres with no backup/DR.
+**Why:** Infra/CI foundations were real (not vaporware) but self-documented as demo-grade:
+no CI gate on `tests/integration/`, `tests/end_to_end` was an empty stub, and every
+deployment was a manual `docker build` + `kind load docker-image` + `kubectl delete pod`
+sequence run by hand.
 
-- [ ] **6.1** Gate `tests/integration/` in CI — spin up a `db-test` Postgres+pgvector service
-      container in a new/extended workflow, run the real-DB suite on every relevant PR, not
-      manually only — M
-- [ ] **6.2** Replace the `tests/end_to_end` stub with at least one real smoke test (login →
-      query → see a cited, disclaimered answer) — M
-- [ ] **6.3** Add an actual deploy workflow (build+push image to ECR, trigger ArgoCD
-      sync/kubectl apply) — or, if full CD automation is out of scope for this GA, write an
-      explicit manual deploy runbook so "how do we ship a fix" isn't tribal knowledge — M
-- [ ] **6.4** Move Terraform state to a remote backend (S3 + DynamoDB lock table) instead of
-      local state — S
-- [ ] **6.5** Define a Postgres backup/DR strategy for the k8s StatefulSet (scheduled
-      `pg_dump` to S3 at minimum, or migrate to a managed RDS instance) — M
+**Scope note:** 6.4 (Terraform remote state) and 6.5 (Postgres backup/DR) were deliberately
+moved out of this phase during design and folded into the new Phase 7 below (AWS RDS +
+Secrets Manager + External Secrets Operator work naturally supersedes a bare S3 Terraform
+backend and a hand-rolled `pg_dump` strategy) — see
+`docs/superpowers/specs/2026-07-14-phase6-cicd-hardening-design.md`'s "Explicitly out of
+scope." 6.3 shipped as a real GHCR-backed pipeline, not the ECR option originally sketched
+here (ECR/EKS is Phase 7 scope; GHCR needed zero AWS dependency for this phase).
 
-### Checkpoint: Phase 6
-- [ ] A PR touching `tests/integration` shows those tests running in the Actions log, not just
-      locally
+- [x] **6.1** Gate `tests/integration/` in CI — `.github/workflows/integration.yml`, a real
+      `pgvector/pgvector:pg16` service container (matching `scripts/test-db.sh`'s local
+      convention exactly), migrations applied in filename order, runs on every relevant PR.
+- [x] **6.2** Replace the `tests/end_to_end` stub — `tests/end_to_end/test_smoke.py`, a real
+      login → query → cited-answer smoke test, gated in CI (`smoke.yml`) on every PR.
+- [x] **6.3** Real deploy pipeline — `.github/workflows/deploy.yml`: on push to `develop`,
+      builds real **multi-arch** (`linux/amd64,linux/arm64`) images, pushes to GHCR (private),
+      GitOps-commits an image-tag bump back into `infra/kubernetes/overlays/kind/kustomization.yaml`
+      so ArgoCD (no inbound network path from GitHub to the local cluster ever needed) picks
+      it up itself. `scripts/kind-load-images.sh` (fast local iteration) untouched; new
+      `scripts/use-local-images.sh` for a local, never-committed override.
+- [x] **Environment/branch model** (not originally scoped, added during design): `develop` is
+      now the branch kind+ArgoCD watches (staging); `main` reserved for a real future
+      production/EKS environment (Phase 7), promoted only via a deliberate PR — see
+      `docs/infrastructure/dev-workflow-and-branching.md`.
+- [x] **Docker-compose observability parity** (not originally scoped, added during design):
+      `docker-compose.yml` gained OTel Collector + Prometheus + Grafana + Jaeger, so the fast
+      local dev loop has real trace/metric visibility without needing kind at all.
+
+### Checkpoint: Phase 6 — all live-verified, not just CI-green
+- [x] `tests/integration` runs in the Actions log on every relevant PR (confirmed via
+      `integration.yml`'s real Postgres service container, not a mock)
+- [x] Deploy pipeline verified end-to-end for real, twice: images landed in GHCR, the bot
+      commit landed on `develop`, ArgoCD picked it up, and the running pods' `imageID`s
+      matched the newly-pushed digests (`kubectl get pods -o custom-columns=...imageID`)
+- [x] Two real bugs found and fixed only by watching the pipeline actually run (neither
+      visible in any code review): `infra/argocd/root-apps/root-kind.yaml` was still pinned
+      to `main` (ArgoCD's `selfHeal` was silently reverting the `develop` retarget every
+      reconcile), and `deploy.yml`'s images were amd64-only, crash-looping `apps/web` under
+      QEMU emulation on the arm64 kind cluster (`apps/api`/`apps/worker`, pure Python,
+      tolerated the same emulation silently) — both root-caused and fixed live, not just
+      patched blind
+
+---
+
+## Phase 7 — AWS-flavored production path: RDS, Secrets Manager, External Secrets 🔴
+
+**Why:** Phase 6 deliberately kept the CI/CD pipeline AWS-free (GHCR, not ECR) to close out
+CI/CD essentials without a real-money dependency. Phase 7 is the actual cloud-production path:
+a managed Postgres (replacing the in-cluster StatefulSet, which has no backup/DR story — this
+absorbs the old 6.5), Terraform remote state for the real infra that provisions it (absorbing
+the old 6.4), and AWS Secrets Manager + External Secrets Operator instead of the local
+`.env`-file-to-k8s-Secret bootstrap pattern (`scripts/kind-secrets-bootstrap.sh`) — while
+keeping that local pattern available as an explicit *option*, not replacing it outright, so
+local dev never requires an AWS account.
+
+Not yet brainstormed/specced as of this writing — planning starts on a fresh branch off `main`
+(see `docs/superpowers/specs/` for the eventual design doc once it exists).
+
+- [ ] **7.1** Design: AWS RDS Postgres (with pgvector) as the production database, replacing
+      the in-cluster StatefulSet for the eventual EKS/production environment
+- [ ] **7.2** Design: AWS Secrets Manager + External Secrets Operator integration for the
+      production/EKS environment, mirroring the shape `infra/kubernetes/overlays/eks-demo`
+      already partially has (IRSA roles for `external-secrets` already exist in
+      `infra/terraform/iam_irsa_external_secrets.tf`) — verify and complete, don't assume
+      it's finished
+- [ ] **7.3** Bootstrap flexibility: extend `scripts/bootstrap.sh`/the kind bootstrap flow with
+      an explicit *option* to point local dev at a real AWS RDS instance + Secrets Manager
+      instead of local Postgres/`.env`-derived secrets, without making that the default or
+      required path
+- [ ] **7.4** Terraform remote state (S3 + DynamoDB lock table) for `infra/terraform/` — the
+      old 6.4, now scoped alongside the rest of the real AWS work it was always meant to
+      protect
+- [ ] **7.5** Postgres backup/DR strategy — the old 6.5, likely resolved for free once 7.1
+      lands (RDS automated backups/snapshots) rather than needing a hand-rolled `pg_dump`
+      strategy for the in-cluster StatefulSet
+
+### Checkpoint: Phase 7
 - [ ] `terraform plan` against the remote backend shows no unexpected drift after migration
-- [ ] A documented (and ideally rehearsed) restore-from-backup procedure exists for Postgres
+- [ ] A documented (and ideally rehearsed) restore-from-backup procedure exists for the
+      production Postgres
+- [ ] A developer can `scripts/bootstrap.sh` with the AWS option and get a working local stack
+      pointed at real RDS/Secrets Manager, without that being required for anyone who just
+      wants local Postgres/`.env`
 
 ---
 
