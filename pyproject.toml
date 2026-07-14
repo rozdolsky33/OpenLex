@@ -67,8 +67,9 @@ asyncio_mode = "auto"
 testpaths = ["apps", "packages", "tests"]
 markers = [
     "evaluation: golden-question legal-accuracy eval -- hits a live API + real Claude, costs money and needs a running server. Excluded from the default run; use scripts/evaluate.sh.",
+    "e2e: full-stack smoke test -- hits a live, already-running API over HTTP. Excluded from the default run; needs docker compose up -d --build db api worker first.",
 ]
-addopts = "-m 'not evaluation' --cov --cov-report=term-missing"
+addopts = "-m 'not evaluation and not e2e' --cov --cov-report=term-missing"
 
 [tool.coverage.run]
 # Each workspace member's src/ dir is listed explicitly (not just "apps"/"packages") because

@@ -1,0 +1,11 @@
+# infra/local-observability/prometheus.yml
+#
+# Static scrape config -- docker-compose's built-in service-name DNS makes this trivial (no
+# ServiceMonitor/service-discovery machinery needed, unlike kind's kube-prometheus-stack).
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: api
+    static_configs:
+      - targets: ["api:8000"]
