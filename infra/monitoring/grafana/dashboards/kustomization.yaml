@@ -53,8 +53,6 @@ configMapGenerator:
     files:
       - infrastructure/node-cluster-rsrc-use.json
       - infrastructure/node-rsrc-use.json
-      - infrastructure/nodes-aix.json
-      - infrastructure/nodes-darwin.json
       - infrastructure/nodes.json
     options:
       annotations:
