@@ -69,6 +69,18 @@ spec:
                 access: proxy
                 url: http://tempo.observability.svc.cluster.local:3200
                 isDefault: false
+                jsonData:
+                  # Without this, the Tempo datasource's Service Graph feature (used by
+                  # applications/trace-explorer.json's "Service graph" panel) has no way to
+                  # know which Prometheus datasource holds the traces_service_graph_* metrics
+                  # Tempo's metrics-generator writes -- it silently renders empty even though
+                  # the metrics genuinely exist (confirmed live: 46 traces_service_graph_*
+                  # series in Prometheus), because the panel has nowhere to query. `prometheus`
+                  # is this same Application's own Prometheus datasource uid (set explicitly
+                  # above kube-prometheus-stack's chart convention, matching what
+                  # applications/tier-and-quota.json already hardcodes).
+                  serviceMap:
+                    datasourceUid: prometheus
               - name: Jaeger
                 uid: jaeger
                 type: jaeger
