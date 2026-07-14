@@ -17,7 +17,7 @@
       "id": 1,
       "type": "timeseries",
       "title": "Query volume by tier (rate, 1h)",
-      "description": "sum by (tier) (rate(openlex_query_requests_total[1h]))",
+      "description": "sum by (tier) (rate(openlex_query_requests_total[1h])) * 3600",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
@@ -29,7 +29,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (tier) (rate(openlex_query_requests_total[1h]))",
+          "expr": "sum by (tier) (rate(openlex_query_requests_total[1h])) * 3600",
           "legendFormat": "{{tier}}"
         }
       ]
@@ -38,7 +38,7 @@
       "id": 2,
       "type": "timeseries",
       "title": "Abstain rate (%, 1h)",
-      "description": "100 * rate(openlex_query_abstained_total[1h]) / rate(openlex_http_requests_total{route=\"/query\",status_class=\"2xx\"}[1h]) -- share of successful /query calls that abstained rather than answering.",
+      "description": "100 * sum(rate(openlex_query_abstained_total[1h])) / sum(rate(openlex_http_requests_total{route=\"/query\",status_class=\"2xx\"}[1h])) -- share of successful /query calls that abstained rather than answering.",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
@@ -50,7 +50,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "100 * rate(openlex_query_abstained_total[1h]) / rate(openlex_http_requests_total{route=\"/query\",status_class=\"2xx\"}[1h])",
+          "expr": "100 * sum(rate(openlex_query_abstained_total[1h])) / sum(rate(openlex_http_requests_total{route=\"/query\",status_class=\"2xx\"}[1h]))",
           "legendFormat": "abstain rate"
         }
       ]
@@ -59,7 +59,7 @@
       "id": 3,
       "type": "timeseries",
       "title": "Quota-exhaustion frequency by tier (rate, 1h)",
-      "description": "sum by (tier) (rate(openlex_query_quota_exceeded_total[1h])) -- how often each tier's users hit their quota wall.",
+      "description": "sum by (tier) (rate(openlex_query_quota_exceeded_total[1h])) * 3600 -- how often each tier's users hit their quota wall.",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
@@ -71,7 +71,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (tier) (rate(openlex_query_quota_exceeded_total[1h]))",
+          "expr": "sum by (tier) (rate(openlex_query_quota_exceeded_total[1h])) * 3600",
           "legendFormat": "{{tier}}"
         }
       ]

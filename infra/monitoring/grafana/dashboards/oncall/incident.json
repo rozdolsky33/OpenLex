@@ -85,7 +85,7 @@
           "datasource": { "type": "tempo", "uid": "tempo" },
           "queryType": "traceql",
           "limit": 20,
-          "query": "{ resource.service.name=\"openlex-api\" && name=\"POST /query\" } | sort(duration desc)"
+          "query": "{ resource.service.name=\"openlex-api\" && name=\"POST /query\" }"
         }
       ]
     }
