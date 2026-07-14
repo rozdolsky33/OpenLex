@@ -22,11 +22,14 @@ manifest form but has never actually run.
 completing the existing Secrets Manager + External Secrets Operator manifests (7.2),
 documenting the deliberate environment isolation between local kind and cloud (7.3), Terraform
 remote state (7.4, closes the old 6.4), a Postgres backup/DR strategy (7.5, closes the old
-6.5), a cheap AWS-native cloud observability strategy with Grafana as the shared viewing layer
-(7.6), a two-node-group topology mirroring kind's observability/apps separation with real
-multi-AZ HA (7.7), static `apps/web` hosting via S3 + CloudFront (7.8), and ingress + unified
-auth for the publicly-exposed observability stack (7.9) — none of 7.6-7.9 were in the original
-roadmap sketch; all added during this design pass.
+6.5), mirroring kind's self-hosted observability stack (kube-prometheus-stack + Tempo + Jaeger
++ Loki + Promtail) onto real multi-AZ compute, with AWS-native managed observability
+(X-Ray/CloudWatch) explicitly deferred as a future enhancement (7.6, revised), a two-node-group
+topology mirroring kind's observability/apps separation with real multi-AZ HA (7.7), static
+`apps/web` hosting via S3 + CloudFront (7.8), and ingress + auth for Grafana/ArgoCD with
+port-forward-only access for Prometheus/Jaeger (7.9, revised) — none of 7.6-7.9 were in the
+original roadmap sketch; all added during this design pass, then 7.6/7.9 revised again after
+the implementation plan was already written (see those sections' own "Revised" notes).
 
 **Explicitly out of scope:** actually running `terraform apply` against a real AWS account, or
 any other live AWS deployment/verification — confirmed with the user: this phase produces
@@ -69,7 +72,10 @@ backups, no managed failover, no serious DR story.
   hardcoded) — the *other* keys `openlex/app` needs (`ANTHROPIC_API_KEY`,
   `NY_OPEN_LEG_API_KEY`, `JWT_SECRET_KEY`, `DEMO_*`) stay manually created, since those are
   genuinely external credentials Terraform has no business generating. This is a real,
-  bounded improvement over today's fully-manual step, not a full rewrite of it.
+  bounded improvement over today's fully-manual step, not a full rewrite of it. `rds.tf` also
+  writes a second derived key, `POSTGRES_EXPORTER_DSN` (same credentials, libpq-format,
+  `sslmode=require`) — 7.6 (revised)'s `postgres-exporter` needs this the same way
+  `scripts/kind-secrets-bootstrap.sh` already derives it locally for kind.
 - **Migrations:** RDS has no `docker-entrypoint-initdb.d` equivalent (unlike the local
   `postgres` `StatefulSet`, which mounts `migrations/postgres/` directly). New one-time k8s
   `Job` manifest (`infra/kubernetes/overlays/eks-demo/migrate-job.yaml`) running the same
@@ -203,68 +209,94 @@ silently discard the final state). Documented in `infra/terraform/README.md` as 
 strategy: RDS's own automated daily snapshots, not a custom `pg_dump`-to-S3 pipeline — simpler
 and free (included in RDS pricing up to the allocated storage size).
 
-## 7.6 — Cloud observability: AWS-native managed backends, one shared Grafana
+## 7.6 — Cloud observability: mirror kind's self-hosted stack (revised)
+
+**Revised after the first implementation-planning pass.** The original design here proposed
+AWS-native managed backends (X-Ray, CloudWatch Metrics/Logs, a standalone Grafana). Explicitly
+reversed per direct feedback: this project's whole observability investment to date — every
+dashboard, every alert rule, every design decision documented in
+`docs/superpowers/specs/2026-07-12-production-observability-design.md` and
+`docs/infrastructure/kubernetes-topology.md` — is kube-prometheus-stack + Tempo + Jaeger +
+Loki + Promtail, matching what real-world teams (the explicit reference point: "what a startup
+is using") actually run. `eks-demo` should demonstrate *that* stack surviving contact with a
+real multi-node, multi-AZ cluster with real EBS-backed storage — not a parallel, cheaper stand-
+in. AWS-native managed observability (X-Ray, CloudWatch, AWS Managed Prometheus/Grafana) moves
+to "Future enhancement" below: a real, documented next stage, not this phase's design.
 
 **Problem:** `eks-demo` has zero observability today — no OTel Collector, no Prometheus, no
-Grafana, nothing (`infra/argocd/apps/eks-demo/` has no observability apps at all, confirmed
-by listing the directory). Copying kind's full self-hosted stack (kube-prometheus-stack +
-Tempo + Jaeger + Loki + Promtail + Alertmanager) would need dedicated observability compute —
-kind gives that its own tainted node (`openlex.dev/workload=observability`, see
-`docs/infrastructure/kubernetes-topology.md`); `eks-demo`'s `variables.tf` currently
-provisions exactly **one** node (`node_desired_size = 1`), so there's nowhere to put a full
-stack without growing the cluster specifically to host it.
+Grafana, nothing (`infra/argocd/apps/eks-demo/` has no observability apps at all, confirmed by
+listing the directory). 7.7's two-node-group topology (below) is what makes copying kind's full
+stack possible here: a dedicated `observability` node group (`t4g.large`, larger than kind's
+minimal worker specifically to give kube-prometheus-stack + Tempo + Jaeger + Loki + Promtail +
+ArgoCD real headroom) plus the `aws-ebs-csi-driver` addon for real `gp3`-backed persistence,
+where kind only had `rancher.io/local-path` on shared container disk.
 
-**Design:** AWS-native managed backends instead of self-hosted, with Grafana staying the one
-shared viewing layer across both environments (the explicit ask: "I do like Grafana as a
-single place for it"):
+**Design:** literally mirror kind's ArgoCD Application set — same charts, same shared
+`infra/monitoring/{kube-prometheus-stack,tempo,jaeger,loki,promtail,postgres-exporter}/
+values-base.yaml` files (already written to be consumed by "the kind Application and any
+future eks-demo Application" per their own header comments — this was anticipated, not a
+retrofit), same `openlex.dev/workload=observability` taint/label/toleration strings, same
+Grafana dashboard ConfigMaps (`infra/monitoring/grafana/dashboards/`, already
+environment-agnostic PromQL/LogQL/TraceQL — no CloudWatch-flavored parallel dashboards needed,
+which also resolves the open question the original 7.6 draft flagged and never answered):
 
-- **Traces → AWS X-Ray.** The *same* `infra/local-observability/otel-collector-config.yaml`
-  shape already proven in both kind and docker-compose — for `eks-demo`, the collector gains
-  an `awsxray` exporter (IAM-authenticated via IRSA, same pattern as `external-secrets`'s role)
-  instead of `otlp/jaeger`/`otlp/tempo`. No new component category, just a different exporter
-  on infrastructure that already exists as a config pattern. X-Ray's free tier (100k traces/
-  month) comfortably covers demo-scale traffic; ~$5/million after.
-- **Metrics → CloudWatch**, via the same collector's `awsemf` (embedded metric format)
-  exporter — the app's existing Prometheus-format metrics
-  (`openlex_http_requests_total`/`openlex_http_request_duration_seconds` from
-  `apps/api/src/openlex_api/http_metrics.py`, already built in Phase 3) flow through
-  unchanged. No self-hosted Prometheus, no kube-prometheus-stack bundle, no dedicated node.
-- **Logs → CloudWatch Logs**, via EKS's standard logging path (Fluent Bit) — no self-hosted
-  Loki/Promtail.
-- **Grafana → one small self-hosted instance** (just the Grafana chart alone — not the
-  kube-prometheus-stack bundle it currently rides along with on kind), configured with
-  CloudWatch and X-Ray as native Grafana datasources (both are officially supported Grafana
-  datasource types, no plugin gymnastics). This is the one place kind and `eks-demo` stay
-  visually consistent even though their backends differ completely — a developer who knows
-  kind's Grafana already knows `eks-demo`'s.
+- **OTel Collector** — identical to kind's (`otlp/tempo` + `otlp/jaeger` dual export, core
+  `otel/opentelemetry-collector` image). No AWS exporters, no IRSA needed at all — every hop
+  stays inside the cluster.
+- **Tempo + Jaeger** — identical to kind's (Tempo's `metricsGenerator` remote-writing to this
+  environment's own `kube-prometheus-stack-prometheus` Service; Jaeger's in-memory storage,
+  same "comparison backend, not primary" framing).
+- **Loki + Promtail** — identical to kind's (`SingleBinary` mode, `replication_factor: 1`,
+  Promtail's DaemonSet with the same three-entry toleration list so it schedules on both node
+  groups, not just `observability`).
+- **kube-prometheus-stack** (Prometheus + Alertmanager + Grafana + kube-state-metrics +
+  node-exporter) — identical to kind's, including the shared file's `additionalPrometheusRulesMap`
+  (the five symptom-based alerts) and Grafana's dashboard sidecar config. No new persistent
+  storage added beyond what kind already has (kind's Prometheus is deliberately ephemeral,
+  6h retention — mirrored exactly, not "upgraded" as part of this phase).
+- **postgres-exporter** — same chart, retargeted at RDS instead of the in-cluster
+  `StatefulSet`: 7.1's `rds.tf` writes a second derived key, `POSTGRES_EXPORTER_DSN`, into the
+  same `openlex/app` Secrets Manager secret (mirroring `scripts/kind-secrets-bootstrap.sh`'s
+  existing `+asyncpg`-stripping derivation for the same purpose, adjusted to `sslmode=require`
+  since RDS — unlike kind's local Postgres — supports real TLS).
+- **Storage:** Tempo's/Loki's PVCs need no `storageClassName` override — 7.7's `gp3`
+  `StorageClass` is marked cluster-default, so they bind automatically, exactly as kind's PVCs
+  bind automatically against kind's default `standard` StorageClass. This is an intentional,
+  documented reliance on the default-class mechanism, not an oversight.
 
-**Explicitly the future cloud-native improvement path, not built now:** if real traffic or
-cost ever justifies it, AWS Managed Prometheus (AMP) + AWS Managed Grafana (AMG), or a fully
-self-hosted stack matching kind's, are both natural swap-ins later — same Grafana dashboards,
-different datasource wiring underneath. Starting on managed AWS primitives is the cheaper,
-lower-ops-burden default until that's actually needed, not a permanent ceiling.
+**Exposure — resolved together with 7.9, not independently:** Grafana gets real
+internet-facing exposure (Ingress + `oauth2-proxy`, alongside ArgoCD's own separate native
+login) — see 7.9. Prometheus and Jaeger have no built-in authentication and get **no Ingress
+at all**; a new port-forward script gives an operator local-browser access instead, the same
+pattern `scripts/observability-port-forward.sh` already established for kind (see 7.9).
 
 ```mermaid
 flowchart TB
-    subgraph EKS["eks-demo (not yet deployed)"]
-        App["apps/api, apps/worker"] -- OTLP --> Coll["OTel Collector<br/>(same config shape as kind/compose)"]
-        Coll -- awsxray exporter --> XRay[["AWS X-Ray"]]
-        Coll -- awsemf exporter --> CW[["CloudWatch Metrics"]]
-        FluentBit["Fluent Bit<br/>(EKS standard logging)"] --> CWLogs[["CloudWatch Logs"]]
-        Graf["Grafana<br/>(single small instance,<br/>chart only, no bundle)"]
-        Graf -- "CloudWatch datasource" --> CW
-        Graf -- "CloudWatch datasource" --> CWLogs
-        Graf -- "X-Ray datasource" --> XRay
+    subgraph EKS["eks-demo — observability node group"]
+        App["apps/api, apps/worker"] -- OTLP --> Coll["OTel Collector<br/>(identical to kind)"]
+        Coll -- otlp/tempo --> Tempo[("Tempo")]
+        Coll -- otlp/jaeger --> Jaeger[("Jaeger")]
+        Promtail["Promtail<br/>(DaemonSet, all nodes)"] --> Loki[("Loki")]
+        PGExp["postgres-exporter<br/>(apps node group)"] -- POSTGRES_EXPORTER_DSN --> RDS[("RDS")]
+        Prom["Prometheus"] -- scrapes --> PGExp
+        Tempo -- metrics-generator remote_write --> Prom
+        Graf["Grafana<br/>(kube-prometheus-stack bundle,<br/>identical to kind)"]
+        Graf --> Prom
+        Graf --> Tempo
+        Graf --> Jaeger
+        Graf --> Loki
     end
 
-    style EKS fill:#f4f0fa,stroke:#5a4a8a
+    style EKS fill:#e8f4ea,stroke:#4a7a52
 ```
 
-**Not yet decided — genuinely open, flag rather than assume:** whether `infra/monitoring/
-grafana/dashboards/**`'s existing PromQL-based dashboard JSON can be reused as-is against
-CloudWatch Metrics Insights (a materially different query language) or need parallel
-CloudWatch-flavored versions. Likely the latter, for at least the panels that matter most
-(Golden Signals) — resolve during implementation, not asserted here as settled.
+**Future enhancement, explicitly not this phase:** AWS-native managed observability (X-Ray for
+traces, CloudWatch Metrics via the collector's `awsemf` exporter, CloudWatch Logs via Fluent
+Bit, AWS Managed Prometheus/Grafana) remains a legitimate later swap-in if this project ever
+needs to demonstrate that pattern too, or if self-hosting's operational cost (SPOT
+interruptions taking the whole stack down together, EBS cost, ArgoCD-managed Helm upgrades)
+stops being worth it relative to a real workload. Same Grafana dashboards, different datasource
+wiring underneath — not built now.
 
 ## 7.7 — Node topology: mirroring kind's separation, cloud-adjusted
 
@@ -367,30 +399,47 @@ flowchart LR
     User -- "API calls" --> API["api.&lt;domain&gt; -> ingress-nginx -> openlex-api"]
 ```
 
-## 7.9 — Ingress + unified auth for the observability stack
+## 7.9 — Ingress + auth for Grafana/ArgoCD; port-forward for Prometheus/Jaeger (revised)
 
-**Problem:** once `eks-demo` is actually internet-facing, Grafana/Prometheus/Jaeger need real
-exposure — but Prometheus and Jaeger have **no built-in authentication at all**, so there's
-nothing to "share a password with" on their end without something in front of them regardless.
+**Revised alongside 7.6.** The original design put `oauth2-proxy` in front of Grafana,
+Prometheus, *and* Jaeger. Explicitly narrowed per direct feedback: only Grafana and ArgoCD get
+real internet-facing exposure; Prometheus and Jaeger — which have no built-in authentication —
+stay internal-only, reachable the same way they already are on kind, via `kubectl
+port-forward`, not via a public Ingress at all. Fewer public endpoints is a real security
+improvement (Prometheus/Jaeger's data isn't meant to be internet-facing at all, gated or not),
+not just a scope cut.
 
-**Design:** `ingress-nginx` (already the chosen, working ingress controller in this
-scaffolding — not introducing Gateway API alongside it as a second, parallel concept) +
-`oauth2-proxy` in front of the three tools that need it:
+**Problem:** once `eks-demo` is actually internet-facing, Grafana needs real exposure for the
+same reason ArgoCD already has it (`argocd-admin-externalsecret.yaml`) — but Prometheus and
+Jaeger have **no built-in authentication at all**, so putting them on the public internet at
+all (even gated) is a larger exposure than this project needs; kind never exposes them
+publicly either (kind has no ingress — `scripts/observability-port-forward.sh` is the only
+access path).
 
-- New ArgoCD Application `app-oauth2-proxy.yaml` (Helm chart `oauth2-proxy/oauth2-proxy`).
-- New Ingress resources for Grafana, Prometheus, and Jaeger (none exist today), each annotated
-  with `nginx.ingress.kubernetes.io/auth-url`/`auth-signin` pointing at `oauth2-proxy`'s
-  endpoints — the standard, well-established ingress-nginx + oauth2-proxy integration pattern.
-  One real login gates all three.
+**Design:**
+
+- `ingress-nginx` (already the chosen, working ingress controller — not introducing Gateway
+  API alongside it) + `oauth2-proxy` in front of **Grafana only**: new ArgoCD Application
+  `app-oauth2-proxy.yaml` (Helm chart `oauth2-proxy/oauth2-proxy`), one new Ingress resource
+  for the `kube-prometheus-stack-grafana` Service, annotated with
+  `nginx.ingress.kubernetes.io/auth-url`/`auth-signin` pointing at `oauth2-proxy`'s endpoints —
+  the standard, well-established ingress-nginx + oauth2-proxy integration pattern.
+- **Prometheus and Jaeger get no Ingress at all.** A new
+  `scripts/eks-demo-observability-port-forward.sh` — deliberately a new file, not an extension
+  of kind's existing `scripts/observability-port-forward.sh` (7.3's isolation discipline: never
+  touch kind-only files as part of cloud-path work) — `kubectl port-forward`s Grafana,
+  Prometheus, Alertmanager, Jaeger, and ArgoCD against the `eks-demo` cluster context, mirroring
+  kind's script service-for-service.
 - **Scope decision, stated explicitly rather than silently overclaiming:** `ArgoCD` keeps its
   own existing native login (`argocd-admin-externalsecret.yaml`, already real and secure) —
-  it is **not** additionally gated by `oauth2-proxy` in this pass. Putting ArgoCD behind
-  `oauth2-proxy` too would mean either double-authenticating (proxy gate, then ArgoCD's own
-  login) or reconfiguring ArgoCD's built-in Dex to federate identity from `oauth2-proxy`
-  directly — a real, separate piece of work, not assumed solved here. So the honest outcome is
-  **one shared login covers Grafana + Prometheus + Jaeger; ArgoCD stays on its own separate
-  (but already secure) login** — not literally "one password for all four." Flagged as a
-  possible future enhancement (ArgoCD OIDC/Dex federation), not built now.
+  it is **not** additionally gated by `oauth2-proxy`. Putting ArgoCD behind `oauth2-proxy` too
+  would mean either double-authenticating (proxy gate, then ArgoCD's own login) or
+  reconfiguring ArgoCD's built-in Dex to federate identity from `oauth2-proxy` directly — a
+  real, separate piece of work, not assumed solved here. So the honest outcome is **one shared
+  login covers Grafana; ArgoCD stays on its own separate (but already secure) login;
+  Prometheus/Jaeger stay off the public internet entirely** — not "one password for
+  everything." Flagged as a possible future enhancement (ArgoCD OIDC/Dex federation), not
+  built now.
 
 ## Testing (no live deployment this phase — see "Explicitly out of scope")
 
@@ -416,9 +465,16 @@ scaffolding — not introducing Gateway API alongside it as a second, parallel c
   AWS resource — `cd apps/web && VITE_API_BASE_URL=https://example.com npm run build` and
   confirm `dist/` contains real static assets referencing the baked-in API URL. This is the
   one piece of 7.7-7.9 genuinely testable without touching AWS at all.
-- 7.9: manual schema cross-check of the `oauth2-proxy` Helm values and the new Ingress
-  `auth-url`/`auth-signin` annotations against oauth2-proxy's actual documented ingress-nginx
-  integration guide — same "cite what was checked against" discipline as 7.2's ESO review.
+- 7.6 (revised): manually verify the reused `openlex.dev/workload=observability` taint/label
+  strings and shared `infra/monitoring/*/values-base.yaml` file references are byte-identical
+  to kind's — the same discipline as 7.7's taint check, since a mismatch here is a silent
+  scheduling/config failure, not a `terraform validate`/`helm template` error.
+- 7.9 (revised): manual schema cross-check of the `oauth2-proxy` Helm values and the new
+  Grafana Ingress `auth-url`/`auth-signin` annotations against oauth2-proxy's actual documented
+  ingress-nginx integration guide — same "cite what was checked against" discipline as 7.2's
+  ESO review. `scripts/eks-demo-observability-port-forward.sh` (Prometheus/Jaeger access) is
+  tested by reading it against `scripts/observability-port-forward.sh`'s own working pattern —
+  no live cluster needed to confirm the two scripts are structurally equivalent.
 
 ## Open questions / risks
 
@@ -436,14 +492,16 @@ scaffolding — not introducing Gateway API alongside it as a second, parallel c
   directly motivates 7.4 (remote state, ideally with S3 bucket encryption + restricted IAM
   access) landing *before* or *alongside* 7.1, not as a purely independent follow-up.
 - **SPOT interruption on the observability node group (7.7):** a 2-hour-notice SPOT reclaim
-  would briefly take Grafana/Prometheus/Tempo/Jaeger/ArgoCD down together (they're all on the
-  same node group) — acceptable for a demo cluster prioritizing cost, but worth naming
-  explicitly rather than leaving as an implicit assumption. Switching that one node group to
-  `capacity_type = "ON_DEMAND"` is a one-line change if this ever becomes a real problem.
-- **`oauth2-proxy` provider choice (7.9) not yet decided:** GitHub OAuth (no password
-  management, fits a portfolio/demo context well) vs. a simple static htpasswd-style provider
-  (no external OAuth app registration needed) — both are legitimate, this is a implementation-
-  time choice, not a design blocker.
+  would briefly take Grafana/Prometheus/Tempo/Jaeger/Loki/Promtail/ArgoCD down together
+  (they're all on the same node group) — acceptable for a demo cluster prioritizing cost, but
+  worth naming explicitly rather than leaving as an implicit assumption. Switching that one
+  node group to `capacity_type = "ON_DEMAND"` is a one-line change if this ever becomes a real
+  problem.
+- **`oauth2-proxy` provider choice (7.9):** resolved during implementation planning — GitHub
+  OAuth (not a static htpasswd-style provider), since oauth2-proxy's htpasswd support is a
+  secondary/basic-auth fallback rather than a standalone primary provider, and GitHub OAuth
+  fits a project that already lives on GitHub. Requires a one-time, hand-registered GitHub
+  OAuth App (documented in `app-oauth2-proxy.yaml`'s own header comment).
 - **CloudFront + ACM's `us-east-1`-only requirement (7.8):** if `infra/terraform/`'s AWS
   provider is configured for a different primary region (matches `var.region`, currently
   `us-east-1` already — so likely a non-issue in practice), CloudFront's ACM certificate still
