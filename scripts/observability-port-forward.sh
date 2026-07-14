@@ -37,7 +37,7 @@ pids+=($!)
 echo "Grafana:      http://localhost:3000  (admin password: kubectl -n ${NAMESPACE} get secret kube-prometheus-stack-grafana -o jsonpath='{.data.admin-password}' | base64 -d)"
 echo "Prometheus:   http://localhost:9090"
 echo "Alertmanager: http://localhost:9093"
-echo "OTLP/HTTP:    http://localhost:4318  (for browser tracing in a later phase)"
+echo "OTLP/HTTP:    http://localhost:4318  (apps/web browser tracing -- see apps/web/src/telemetry.ts)"
 echo "Jaeger:       http://localhost:16686"
 echo "ArgoCD:       https://localhost:8080  (admin password: kubectl -n ${ARGOCD_NAMESPACE} get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)"
 echo

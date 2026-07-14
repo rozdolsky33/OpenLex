@@ -33,6 +33,12 @@ spec:
             # (http://localhost:5173) already allows this pairing.
             - name: VITE_API_BASE_URL
               value: http://localhost:8000
+            # Same "baked into the browser bundle, must be reachable from the developer's own
+            # browser" reasoning as VITE_API_BASE_URL above -- matches
+            # scripts/observability-port-forward.sh's forwarded Collector OTLP/HTTP port. See
+            # apps/web/src/telemetry.ts; unset would just mean tracing is skipped, not broken.
+            - name: VITE_OTLP_ENDPOINT
+              value: http://localhost:4318
           readinessProbe:
             httpGet:
               path: /
