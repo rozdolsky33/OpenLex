@@ -26,15 +26,15 @@ variable "cluster_version" {
 }
 
 variable "node_instance_type" {
-  description = "Single small Graviton instance type — no GPU needed (see ml/model_cards/bge-small-en-v1.5.md)"
+  description = "Instance type for the `apps` node group — no GPU needed (see ml/model_cards/bge-small-en-v1.5.md)"
   type        = string
   default     = "t4g.medium"
 }
 
-variable "node_desired_size" {
-  description = "Node count — 1 is enough for this workload; see docs/infrastructure/aws-eks-cost-estimate.md"
-  type        = number
-  default     = 1
+variable "observability_node_instance_type" {
+  description = "Instance type for the `observability` node group — larger than apps: kube-prometheus-stack + Tempo + Jaeger + Loki + Promtail + OTel Collector + ArgoCD together need more headroom"
+  type        = string
+  default     = "t4g.large"
 }
 
 variable "secrets_manager_path_prefix" {
