@@ -95,6 +95,29 @@ and `docs/superpowers/plans/2026-07-13-observability-phase2-tracing-and-ha.md`.
         comment predated apps/web having a Dockerfile) and reachable locally via the new
         `scripts/app-port-forward.sh`; `scripts/observability-port-forward.sh` now also
         forwards `argocd-server`.
+- [x] 3.13 SRE dashboard strategy (2026-07-13, PR #18, merged) — see
+      `docs/superpowers/specs/2026-07-13-sre-dashboard-strategy-design.md` and its
+      implementation plan `docs/superpowers/plans/2026-07-13-sre-dashboard-strategy.md`. Adds
+      audience-tiered Grafana dashboards on top of the existing stack (Applications/Engineering
+      already had Golden Signals + Tier & Quota; this pass adds a User Journey / Trace Explorer
+      dashboard there, plus new Product, Executive, and On-Call folders/dashboards) and
+      Anthropic API cost/token/latency/error observability (`legal_generation.anthropic_metrics`,
+      wired into `generate_answer` with rate-limit/api-error/connection-error classification,
+      zero `/query` behavior change). Two concrete bugs found and fixed along the way:
+      `scripts/observability-port-forward.sh` never actually forwarded Jaeger (likely root cause
+      of prior difficulty cross-referencing traces there), and `/healthz` was excluded from
+      neither tracing nor RED metrics despite being hit continuously by k8s probes. Also adds
+      `X-Trace-Id` response headers and stable Tempo/Jaeger/Loki Grafana datasource UIDs (they
+      previously had none, an unpredictable-UID bug the design review caught). All four new/
+      touched dashboards were live-verified against the real `kind-openlex` cluster
+      (ConfigMaps applied, files confirmed mounted in the Grafana pod, panel PromQL/TraceQL
+      spot-checked against live Prometheus/Tempo); a final whole-branch review caught one real
+      bug pre-merge (a PromQL vector-matching mismatch that would have left the Product
+      dashboard's abstain-rate panel silently empty) plus three minor issues, all fixed and
+      re-verified. **3.10 (browser tracing) and 3.11 (Alertmanager symptom-based rules) remain
+      open** — explicitly out of scope for this pass, tracked as-is, not touched or narrowed by
+      it. The On-Call dashboard's `dashboard_url` alert-annotation wiring is a small follow-on
+      once 3.11 lands, not a blocker for the dashboard's existence.
 
 ## Phase 4 — Legal/compliance content 🔴 blocker
 - [ ] 4.1 ToS/Privacy route + page live in `apps/web`, linked from auth screens
