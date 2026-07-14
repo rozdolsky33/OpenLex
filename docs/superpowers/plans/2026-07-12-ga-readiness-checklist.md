@@ -118,6 +118,35 @@ and `docs/superpowers/plans/2026-07-13-observability-phase2-tracing-and-ha.md`.
       open** — explicitly out of scope for this pass, tracked as-is, not touched or narrowed by
       it. The On-Call dashboard's `dashboard_url` alert-annotation wiring is a small follow-on
       once 3.11 lands, not a blocker for the dashboard's existence.
+- [x] 3.14 Post-3.13 hardening (2026-07-14, PRs #19–#22, all merged) — four follow-up fixes
+      found via live use of the 3.13 dashboards, not part of that pass's original scope:
+      - **#19** Tempo's Grafana datasource had empty `jsonData` — the Service Graph panel had
+        no Prometheus datasource to query for `traces_service_graph_*` metrics (which
+        genuinely existed, 46 real series) and always rendered empty. Fixed:
+        `jsonData.serviceMap.datasourceUid: prometheus`.
+      - **#20** Three real dashboard bugs plus a build-tooling bug, all live-verified:
+        On-Call's error-rate panel had no zero-guard (`OR on() vector(0)`), so zero 5xx errors
+        showed "No data" instead of "0%"; `infrastructure/nodes-aix.json`/`nodes-darwin.json`
+        removed (stock kube-prometheus-stack dashboards for OSes this Linux-only kind cluster
+        never runs, permanently empty by design); the repo had no `.dockerignore`, so every
+        `apps/api`/`apps/worker` build copied six stale `.claude/worktrees/*` checkouts
+        (~5GB, each with its own venv) into the build context — this was also the proximate
+        cause of `openlex-api` running 16+-hour-stale code (a `docker build` failure from a
+        full Docker Desktop VM disk), fixed alongside redeploying it with 3.13's actual code.
+      - **#21** Tempo ran on the chart's default emptyDir, not a PVC — confirmed live it lost
+        all trace data on every pod restart and, once the shared node disk filled, started
+        failing writes entirely (`"failed to cut traces... no space left on device"`; a real
+        trace's direct ID lookup 404'd despite the Collector reporting successful export).
+        Gave it a dedicated 10Gi PVC (same convention `loki`'s `singleBinary.persistence`
+        already uses); verified end-to-end post-fix with a real trace's direct ID lookup
+        returning 200 with the full span waterfall.
+      - **#22** `apps/api`'s OTel Resource now carries `k8s.pod.name`/`k8s.node.name` (via
+        Downward API + `OTEL_RESOURCE_ATTRIBUTES`, zero application code change — Jaeger
+        "Process" tags / Tempo `resource.*`, not per-span attributes, since pod/node identity
+        is fixed for a container's lifetime). Verified live: a real trace's resource
+        attributes show the exact pod/node that served the request.
+      **3.10 and 3.11 remain open and untouched by any of this** — none of #19–#22 add browser
+      tracing or alerting rules; they're fixes to what 3.13 already shipped.
 
 ## Phase 4 — Legal/compliance content 🔴 blocker
 - [ ] 4.1 ToS/Privacy route + page live in `apps/web`, linked from auth screens
