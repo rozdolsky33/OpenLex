@@ -114,7 +114,7 @@ scripts/test/test-db.sh up            # start db-test (Postgres+pgvector on :554
 Local environments are driven by one **master script** each (`up`/`down`), which chain the
 individual scripts and are idempotent. Prefer these over running the steps by hand — the
 `local-environment` skill has the full sequence and a symptom→fix troubleshooting matrix, and
-the `/bringup` command drives either environment end-to-end:
+the `/bootstrap` command drives either environment end-to-end:
 
 ```bash
 scripts/compose-master.sh up | down     # docker-compose: bootstrap -> health-wait -> ingest -> seed
@@ -202,5 +202,5 @@ beyond this file:
   `packages/legal_generation`), `data-ingestion` (statute/case-law ingestion pipeline).
 - Skills: `openlex-data-model`, `ny-open-legislation-api`, `grounded-answer-contract`, `verify`,
   `local-environment` (bring up / tear down / troubleshoot the compose + kind stacks).
-- Commands: `/adr` (scaffold an ADR), `/bringup [compose|kind] [up|down]` (drive a local
+- Commands: `/adr` (scaffold an ADR), `/bootstrap [compose|kind] [up|down]` (drive a local
   environment end-to-end via the `local-environment` skill).

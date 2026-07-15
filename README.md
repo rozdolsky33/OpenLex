@@ -229,7 +229,7 @@ kind and EKS exist to demonstrate the Kubernetes/GitOps/production story.
 > 1. **Run the scripts yourself** — a single master per environment takes `up`/`down`:
 >    `scripts/compose-master.sh up` / `scripts/kind-master.sh up` (details below).
 > 2. **Let Claude Code drive it** — this repo ships a `local-environment` skill and a
->    `/bringup [compose|kind] [up|down]` command, so you can just run `/bringup kind up` (or
+>    `/bootstrap [compose|kind] [up|down]` command, so you can just run `/bootstrap kind up` (or
 >    ask Claude to "bring up the kind environment"). Claude runs the same master scripts and
 >    uses a built-in symptom→fix matrix to troubleshoot (empty-corpus abstain, unseeded-user
 >    401, stale Grafana port-forward, etc.). See `.claude/skills/local-environment/`.
@@ -298,6 +298,10 @@ Then open access in separate terminals (these block on `kubectl port-forward`):
 scripts/kind/app-port-forward.sh            # Web UI :5173, API :8000
 scripts/kind/observability-port-forward.sh  # Grafana :3000, ArgoCD :8080, Jaeger :16686
 ```
+
+These forwards **self-reconnect**: each `kubectl port-forward` is supervised and restarted if the
+pod behind it is replaced (a Grafana/app pod roll during an ArgoCD sync), so they survive pod
+rolls instead of silently dying. Ctrl-C stops them cleanly.
 
 <details><summary>…or run the bring-up steps individually</summary>
 
@@ -438,7 +442,7 @@ troubleshooting — instead of you running each script by hand. It's all plain f
 
 | Command | What it does |
 |---------|--------------|
-| `/bringup [compose\|kind] [up\|down]` | Drives a whole local environment end-to-end, and troubleshoots if a step fails (via the `local-environment` skill). |
+| `/bootstrap [compose\|kind] [up\|down]` | Drives a whole local environment end-to-end, and troubleshoots if a step fails (via the `local-environment` skill). |
 | `/adr` | Scaffolds a new Architecture Decision Record in `docs/decisions/`. |
 
 **Skills** (`.claude/skills/`) — the agent loads these automatically when relevant:
@@ -460,7 +464,7 @@ Two equivalent ways to bring up an environment:
 
 ```text
 # In Claude Code, run the command:
-/bringup kind up
+/bootstrap kind up
 
 # ...or just ask in plain language:
 "bring up the kind environment and make sure the chat works"
@@ -469,7 +473,7 @@ Two equivalent ways to bring up an environment:
 The agent runs the same master scripts (`scripts/kind-master.sh` / `scripts/compose-master.sh`),
 watches the colored step output, and — if the app misbehaves — diagnoses it server-side and
 applies the documented fix, then tells you which port-forwards to start. Tear down the same
-way: `/bringup kind down` (it confirms first, since that deletes the cluster).
+way: `/bootstrap kind down` (it confirms first, since that deletes the cluster).
 
 Everything the agent does here you can also do manually — see
 [Running it — three ways](#running-it--three-ways). The agentic path just packages the
