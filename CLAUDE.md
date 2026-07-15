@@ -111,13 +111,27 @@ uv run --package openlex-api pytest apps/api/tests   # run one package/app's tes
 scripts/test/test-db.sh up            # start db-test (Postgres+pgvector on :5544) for tests/integration
 ```
 
+Local environments are driven by one **master script** each (`up`/`down`), which chain the
+individual scripts and are idempotent. Prefer these over running the steps by hand — the
+`local-environment` skill has the full sequence and a symptom→fix troubleshooting matrix, and
+the `/bringup` command drives either environment end-to-end:
+
 ```bash
-scripts/compose/bootstrap.sh            # first-time setup: .env, uv sync, docker compose up --build
-docker compose up --build
-scripts/compose/ingest.sh all           # run ingestion (guarded — see "Current state" above)
-scripts/eval/evaluate.sh             # run the golden-question eval harness (guarded)
-scripts/compose/seed-local-db.sh        # re-apply migrations/postgres/0001_init.sql manually
+scripts/compose-master.sh up | down     # docker-compose: bootstrap -> health-wait -> ingest -> seed
+scripts/kind-master.sh    up | down     # kind: cluster -> secrets -> ArgoCD -> wait -> ingest -> seed
 ```
+
+```bash
+scripts/compose/bootstrap.sh            # individual steps (behind the compose master):
+scripts/compose/ingest.sh all           # run ingestion
+scripts/seed/seed-demo-users.sh         # seed the tier-gated demo logins (else /auth/login 401s)
+scripts/eval/evaluate.sh                # run the golden-question eval harness (guarded)
+scripts/compose/seed-local-db.sh        # re-apply migrations/postgres/*.sql manually
+```
+
+Port-forwards are **not** started by the masters (they block). On kind, after `up`, run
+`scripts/kind/app-port-forward.sh` and `scripts/kind/observability-port-forward.sh` in separate
+terminals, and (re)start them *after* `up` since the pods roll during setup.
 
 - API: http://localhost:8000 (docs at `/docs`)
 - Web UI: http://localhost:5173
@@ -182,7 +196,11 @@ feature work lands first.
 
 ## Project skills & agents
 
-`.claude/agents/` and `.claude/skills/` hold project-specific context beyond this file:
+`.claude/agents/`, `.claude/skills/`, and `.claude/commands/` hold project-specific context
+beyond this file:
 - Agents: `backend-implementer` (building out `apps/api`'s routers/`packages/legal_retrieval`/
   `packages/legal_generation`), `data-ingestion` (statute/case-law ingestion pipeline).
-- Skills: `openlex-data-model`, `ny-open-legislation-api`, `grounded-answer-contract`.
+- Skills: `openlex-data-model`, `ny-open-legislation-api`, `grounded-answer-contract`, `verify`,
+  `local-environment` (bring up / tear down / troubleshoot the compose + kind stacks).
+- Commands: `/adr` (scaffold an ADR), `/bringup [compose|kind] [up|down]` (drive a local
+  environment end-to-end via the `local-environment` skill).
