@@ -54,6 +54,11 @@ output "github_actions_deploy_web_role_arn" {
   value       = aws_iam_role.github_actions_deploy_web.arn
 }
 
+output "github_actions_ecr_push_role_arn" {
+  description = "Paste into the GitHub repo's OPENLEX_ECR_PUSH_ROLE_ARN Actions variable (used by deploy.yml to push images to ECR)"
+  value       = aws_iam_role.github_actions_ecr_push.arn
+}
+
 # Exposed as an output (not just var.domain_name) so scripts/eks/github-deploy-vars.sh can read
 # all four deploy-static values from `terraform output` uniformly — see docs/infrastructure/
 # web-deploy.md.

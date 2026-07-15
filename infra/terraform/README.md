@@ -51,19 +51,22 @@ Local `kind` needs none of this — it's local-only, no AWS involved.
 
 ## Static site deploy (`apps/web`, 7.8)
 
-After `terraform apply` completes, the four GitHub Actions **variables** `deploy-static.yml`
-needs are all Terraform outputs — so don't hand-copy them. Run the automation, which reads the
-outputs and upserts the variables (idempotent):
+After `terraform apply` completes, the GitHub Actions **variables** the deploy workflows need are
+all Terraform outputs — so don't hand-copy them. Run the automation, which reads the outputs and
+upserts the variables (idempotent):
 
 ```bash
 scripts/eks/github-deploy-vars.sh        # needs `gh auth login` + terraform init here
 ```
 
-It sets `OPENLEX_DOMAIN`, `OPENLEX_WEB_BUCKET`, `OPENLEX_CLOUDFRONT_DISTRIBUTION_ID`, and
-`OPENLEX_DEPLOY_WEB_ROLE_ARN` (the last one **cannot** be named `GITHUB_ACTIONS_...` — GitHub
-reserves the `GITHUB_` prefix and rejects it). See the full pipeline, the DNS/cert gate that
-must clear before `cloudfront_distribution_id` exists, and troubleshooting in
-[docs/infrastructure/web-deploy.md](../../docs/infrastructure/web-deploy.md).
+It sets `OPENLEX_DOMAIN`, `OPENLEX_WEB_BUCKET`, `OPENLEX_CLOUDFRONT_DISTRIBUTION_ID`,
+`OPENLEX_DEPLOY_WEB_ROLE_ARN` (deploy-static.yml → S3/CloudFront), and
+`OPENLEX_ECR_PUSH_ROLE_ARN` (deploy.yml → push images to ECR). The two `*_ROLE_ARN` names
+**cannot** use the `GITHUB_ACTIONS_...` form — GitHub reserves the `GITHUB_` prefix and rejects
+it. See the full pipelines, the DNS/cert gate that must clear before `cloudfront_distribution_id`
+exists, and troubleshooting in
+[docs/infrastructure/web-deploy.md](../../docs/infrastructure/web-deploy.md) and
+[docs/infrastructure/eks-argocd-bootstrap.md](../../docs/infrastructure/eks-argocd-bootstrap.md).
 
 `.github/workflows/deploy-static.yml` then deploys automatically on every push to `main` that
 touches `apps/web/**`.

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # scripts/eks/github-deploy-vars.sh
 #
-# Push the four GitHub Actions *variables* that .github/workflows/deploy-static.yml needs to
-# deploy apps/web to S3 + CloudFront. Their values are all Terraform outputs of the eks-demo
-# stack (infra/terraform), so this reads them straight from `terraform output` and sets them on
-# the repo with `gh` — no hand-copying, no guessing which value goes where. Idempotent:
-# `gh variable set` upserts, so rerun any time the infra is re-applied or a value changes.
+# Set the GitHub Actions *variables* the deploy workflows need: deploy-static.yml (ships apps/web
+# to S3 + CloudFront) and deploy.yml (pushes the api/worker/web images to ECR for eks-demo).
+# Every value is a Terraform output of the eks-demo stack (infra/terraform), so this reads them
+# straight from `terraform output` and sets them on the repo with `gh` — no hand-copying, no
+# guessing which value goes where. Idempotent: `gh variable set` upserts, so rerun any time the
+# infra is re-applied or a value changes.
 #
 # These are non-secret VARIABLES (bucket name, CloudFront id, role ARN, domain) — not secrets —
 # so they're safe to store as Actions variables and to print here. The only real secrets in
@@ -55,12 +56,14 @@ DOMAIN="$(terraform -chdir="$TF_DIR" output -raw domain_name 2>/dev/null \
 BUCKET="$(tf_out web_bucket_name)"
 CF_ID="$(tf_out cloudfront_distribution_id)"
 ROLE_ARN="$(tf_out github_actions_deploy_web_role_arn)"
+ECR_PUSH_ARN="$(tf_out github_actions_ecr_push_role_arn)"
 info "OPENLEX_DOMAIN                     = $DOMAIN"
 info "OPENLEX_WEB_BUCKET                 = $BUCKET"
 info "OPENLEX_CLOUDFRONT_DISTRIBUTION_ID = $CF_ID"
 info "OPENLEX_DEPLOY_WEB_ROLE_ARN        = $ROLE_ARN"
+info "OPENLEX_ECR_PUSH_ROLE_ARN         = $ECR_PUSH_ARN"
 
-step "Set the four repo variables (upsert)"
+step "Set the repo variables (upsert)"
 set_var() { # set_var <NAME> <VALUE>
   gh variable set "$1" "${gh_repo_flag[@]}" --body "$2"
   ok "$1"
@@ -68,6 +71,7 @@ set_var() { # set_var <NAME> <VALUE>
 set_var OPENLEX_DOMAIN "$DOMAIN"
 set_var OPENLEX_WEB_BUCKET "$BUCKET"
 set_var OPENLEX_CLOUDFRONT_DISTRIBUTION_ID "$CF_ID"
-set_var OPENLEX_DEPLOY_WEB_ROLE_ARN "$ROLE_ARN"
+set_var OPENLEX_DEPLOY_WEB_ROLE_ARN "$ROLE_ARN"        # deploy-static.yml (S3/CloudFront)
+set_var OPENLEX_ECR_PUSH_ROLE_ARN "$ECR_PUSH_ARN"      # deploy.yml (push images to ECR)
 
-done_banner "deploy-static variables are set. Push apps/web changes to main to trigger a deploy."
+done_banner "deploy variables are set. deploy.yml pushes images (GHCR+ECR) on develop; deploy-static.yml ships apps/web on main."
