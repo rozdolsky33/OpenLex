@@ -127,11 +127,11 @@ jobs:
 
       - name: Ingest golden-question seed statutes
         if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true'
-        run: scripts/ingest.sh statutes
+        run: scripts/compose/ingest.sh statutes
 
       - name: Seed demo users
         if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true'
-        run: scripts/seed-demo-users.sh
+        run: scripts/seed/seed-demo-users.sh
         # POST /auth/register is disabled for this demo -- the eval harness's _auth_token
         # fixture logs in as the seeded Platinum user, so it must exist before either
         # evaluation pass runs. Seeded once against Postgres here; surviving the later
@@ -143,12 +143,12 @@ jobs:
         env:
           DATABASE_URL: postgresql+asyncpg://openlex:openlex@localhost:5432/openlex
           FRESHNESS_RESULTS_PATH: freshness-results.json
-        run: uv run --package openlex-api python scripts/check_statute_freshness.py
+        run: uv run --package openlex-api python scripts/eval/check_statute_freshness.py
         # No ANTHROPIC_API_KEY spend at all -- runs before either Claude pass so a transient
         # NY Open Legislation API hiccup doesn't burn Claude budget first.
         # continue-on-error: one bad live fetch shouldn't fail the whole job (the report
         # renders "freshness check unavailable this run" when this file is missing/errored --
-        # see scripts/generate_eval_report.py).
+        # see scripts/eval/generate_eval_report.py).
 
       - name: Run golden-question evaluation (Haiku)
         if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true'
@@ -156,7 +156,7 @@ jobs:
           EVAL_API_BASE_URL: http://localhost:8000
           EVAL_RESULTS_PATH: results-haiku.json
           ANTHROPIC_MODEL: claude-haiku-4-5
-        run: scripts/evaluate.sh
+        run: scripts/eval/evaluate.sh
 
       - name: Verify production model default hasn't drifted
         if: steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true' && github.event_name == 'workflow_dispatch'
@@ -235,7 +235,7 @@ jobs:
           EVAL_API_BASE_URL: http://localhost:8000
           EVAL_RESULTS_PATH: results-sonnet.json
           ANTHROPIC_MODEL: claude-sonnet-4-5
-        run: scripts/evaluate.sh
+        run: scripts/eval/evaluate.sh
 
       - name: Show container logs on failure
         if: failure() && steps.golden.outputs.exists == 'true' && steps.secrets.outputs.configured == 'true'
@@ -326,7 +326,7 @@ jobs:
           cp gh-pages-checkout/history.ndjson history.ndjson
 
       - name: Generate report
-        run: uv run python scripts/generate_eval_report.py
+        run: uv run python scripts/eval/generate_eval_report.py
 
       - uses: actions/configure-pages@v5
 

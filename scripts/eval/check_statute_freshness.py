@@ -2,7 +2,8 @@
 were last ingested -- a signal that the golden-question answers graded against the stored
 snapshot might need review. See docs/decisions/0004-golden-question-report-and-pages.md.
 
-Run from the repo root: `uv run --package openlex-api python scripts/check_statute_freshness.py`
+Run from the repo root:
+`uv run --package openlex-api python scripts/eval/check_statute_freshness.py`
 Writes FRESHNESS_RESULTS_PATH (default freshness-results.json). One bad live fetch is recorded
 per-section, not fatal to the rest of the batch (mirrors
 pipelines/indexing/statutes.py::upsert_all_seed_statutes's per-document error handling) -- a

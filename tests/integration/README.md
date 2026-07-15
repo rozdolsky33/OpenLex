@@ -6,7 +6,7 @@ Cross-package tests that hit a real Postgres (e.g. `legal_retrieval` querying ac
 ## Running
 
 ```bash
-scripts/test-db.sh up     # starts the db-test docker-compose service (pgvector/pg16, port 5544)
+scripts/test/test-db.sh up     # starts the db-test docker-compose service (pgvector/pg16, port 5544)
 uv run pytest             # or: uv run pytest tests/integration
 ```
 
@@ -21,8 +21,8 @@ teardown (see `db_session` in `conftest.py`) — tests don't share committed sta
 resets the schema between runs. Re-apply it after changing `migrations/postgres/0001_init.sql`:
 
 ```bash
-scripts/test-db.sh reset
+scripts/test/test-db.sh reset
 ```
 
-`scripts/test-db.sh down` stops and removes the container; its data dir is tmpfs (in-memory), so
+`scripts/test/test-db.sh down` stops and removes the container; its data dir is tmpfs (in-memory), so
 there's nothing to clean up on disk.

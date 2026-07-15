@@ -5,8 +5,8 @@ is tests/evaluation's job. Marked `e2e` and excluded from the default `uv run py
 the root pyproject.toml's addopts): it needs a running server. Run via:
 
     docker compose up -d --build db api worker
-    scripts/ingest.sh statutes
-    scripts/seed-demo-users.sh
+    scripts/compose/ingest.sh statutes
+    scripts/seed/seed-demo-users.sh
     uv run pytest tests/end_to_end -v -m e2e
 """
 
@@ -27,7 +27,7 @@ def test_smoke_login_query_cited_answer() -> None:
     password = settings.demo_platinum_password
     assert email and password, (
         "DEMO_PLATINUM_EMAIL/DEMO_PLATINUM_PASSWORD aren't set -- seed the demo users "
-        "(scripts/seed-demo-users.sh) and ensure .env has them before running this test."
+        "(scripts/seed/seed-demo-users.sh) and ensure .env has them before running this test."
     )
 
     login_response = httpx.post(

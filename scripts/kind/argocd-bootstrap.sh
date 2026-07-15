@@ -2,10 +2,10 @@
 # One-time-per-cluster imperative install of ArgoCD itself (chicken-and-egg — it can't deploy
 # itself from nothing). Everything else is then ArgoCD-managed via the app-of-apps root
 # Application this script applies at the end. Usage:
-#   scripts/argocd-bootstrap.sh kind
-#   scripts/argocd-bootstrap.sh eks-demo
+#   scripts/kind/argocd-bootstrap.sh kind
+#   scripts/kind/argocd-bootstrap.sh eks-demo
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 ENV="${1:-}"
 if [[ "${ENV}" != "kind" && "${ENV}" != "eks-demo" ]]; then

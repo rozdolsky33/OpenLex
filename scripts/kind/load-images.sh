@@ -6,7 +6,7 @@
 # won't fight over a changing tag — just re-run this and delete the pod (or `kubectl rollout
 # restart`) to pick up the new image.
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 CLUSTER_NAME="openlex"
 

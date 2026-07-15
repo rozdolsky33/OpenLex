@@ -1,4 +1,4 @@
-# The one Application a human applies by hand for kind (via scripts/argocd-bootstrap.sh kind):
+# The one Application a human applies by hand for kind (via scripts/kind/argocd-bootstrap.sh kind):
 # `kubectl apply -f infra/argocd/projects/appproject-kind.yaml -f infra/argocd/root-apps/root-kind.yaml`
 # Everything else in infra/argocd/apps/kind/ is then reconciled automatically.
 apiVersion: argoproj.io/v1alpha1

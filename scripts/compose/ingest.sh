@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Run the ingestion pipeline against the running docker-compose stack.
-# Usage: scripts/ingest.sh [statutes|cases|all]
+# Usage: scripts/compose/ingest.sh [statutes|cases|all]
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 SOURCE="${1:-all}"
 

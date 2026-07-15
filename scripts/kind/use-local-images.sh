@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Local-only counterpart to deploy.yml's GHCR tag bump: after scripts/kind-load-images.sh
+# Local-only counterpart to deploy.yml's GHCR tag bump: after scripts/kind/load-images.sh
 # loads fresh :kind-local images into the kind cluster's containerd store, this points the
 # overlay's committed images: block at those tags instead of whatever ghcr.io/...:<sha> the
 # last real deploy set -- otherwise ArgoCD/kubectl would keep pulling the old GHCR image, not
@@ -10,7 +10,7 @@
 # (or a fresh `git pull`) restores the real GHCR-tag state. Never run this as part of any CI
 # workflow.
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 if ! command -v kustomize >/dev/null 2>&1; then
   echo "kustomize CLI not found — install it first (e.g. \`brew install kustomize\`)." >&2
