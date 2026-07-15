@@ -8,7 +8,7 @@
 locals {
   node_security_group_additional_rules = {
     ingress_nodeport_from_internet = {
-      description = "Allow the ingress-nginx instance-mode NLB to reach nodes' NodePort range"
+      description = "Allow the ingress-nginx instance-mode NLB to reach the nodes NodePort range"
       protocol    = "tcp"
       from_port   = 30000
       to_port     = 32767

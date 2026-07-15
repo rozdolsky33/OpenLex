@@ -1,0 +1,20 @@
+# GitGuardian / ggshield configuration.
+#
+# The entries below are NON-FUNCTIONAL CI placeholders that live in
+# .github/workflows/{api,pipelines,integration}.yml. `openlex_shared.config.Settings` requires
+# these fields to exist at import time, but those jobs never make a real Claude call, open a DB
+# connection, or verify a token -- so there is no real credential here and nothing to rotate.
+#
+# HEAD no longer hardcodes them (they're generated at runtime with `openssl rand` into
+# $GITHUB_ENV -- see each workflow's "Generate throwaway CI config" step), but the literals
+# still exist in commit 88e3f84, which is already on `main` (shared production history).
+# Rewriting that history to erase a fake placeholder is riskier than it's worth, so these known
+# matches are ignored here as documented false positives.
+version: 2
+
+secret:
+  ignored-matches:
+    - name: "CI placeholder JWT_SECRET_KEY in test workflows (non-functional)"
+      match: ci-placeholder-not-a-real-secret-32chars
+    - name: "CI placeholder DATABASE_URL in test workflows (non-functional)"
+      match: postgresql+asyncpg://ci:ci@localhost:5432/ci
