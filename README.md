@@ -233,7 +233,9 @@ The fast, native inner loop. Brings up Postgres, the API, the worker, the web UI
 
 ```bash
 cp .env.example .env          # then set ANTHROPIC_API_KEY, NY_OPEN_LEG_API_KEY, JWT_SECRET_KEY
-scripts/compose/bringup.sh    # master: bootstrap -> health-wait -> ingest -> seed users
+scripts/compose-master.sh up  # bootstrap -> health-wait -> ingest -> seed users
+# ...and to tear it all down (stack + volumes):
+scripts/compose-master.sh down
 ```
 
 <details><summary>…or run the steps individually</summary>
@@ -266,7 +268,9 @@ resources than Compose.
 roll out, then ingest + seed:
 
 ```bash
-scripts/kind/bringup.sh   # master: up -> ghcr secret -> secrets -> argocd -> wait -> ingest -> seed
+scripts/kind-master.sh up   # cluster -> ghcr secret -> secrets -> argocd -> wait -> ingest -> seed
+# ...and to tear the cluster down:
+scripts/kind-master.sh down
 ```
 
 Then open access in separate terminals (these block on `kubectl port-forward`):
