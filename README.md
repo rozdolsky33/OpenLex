@@ -267,8 +267,24 @@ scripts/kind-ghcr-pull-secret-bootstrap.sh  # one-time: let the cluster pull pri
 scripts/kind-secrets-bootstrap.sh           # one-time: seed app secrets into the cluster
 scripts/argocd-bootstrap.sh kind            # install ArgoCD + point it at the kind overlay
 scripts/app-port-forward.sh                 # reach the app locally
-scripts/observability-port-forward.sh       # reach Grafana/Jaeger/etc.
+scripts/observability-port-forward.sh       # reach Grafana/Jaeger/ArgoCD/etc.
 ```
+
+kind has no ingress, so everything is reached over `kubectl port-forward` (the two scripts
+above open all of these):
+
+| Service | URL | Opened by |
+|---------|-----|-----------|
+| Web UI | http://localhost:5173 | `app-port-forward.sh` |
+| API (docs at `/docs`) | http://localhost:8000 | `app-port-forward.sh` |
+| **ArgoCD** (GitOps UI) | **https://localhost:8080** | `observability-port-forward.sh` |
+| Grafana (dashboards) | http://localhost:3000 | `observability-port-forward.sh` |
+| Prometheus (metrics) | http://localhost:9090 | `observability-port-forward.sh` |
+| Alertmanager | http://localhost:9093 | `observability-port-forward.sh` |
+| Jaeger (traces) | http://localhost:16686 | `observability-port-forward.sh` |
+
+> ArgoCD's initial admin password:
+> `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d`
 
 From here it's **GitOps**: a merge to `develop` triggers `.github/workflows/deploy.yml`, which
 builds multi-arch images to GHCR, bumps the image tags in `infra/kubernetes/overlays/kind/`,
