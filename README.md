@@ -262,13 +262,29 @@ for staging-realistic testing, not everyday coding — it needs more tooling and
 resources than Compose.
 
 ```bash
+# --- cluster + platform bring-up ---
 scripts/kind/up.sh                          # create the `openlex` kind cluster
 scripts/kind/ghcr-pull-secret-bootstrap.sh  # one-time: let the cluster pull private images
-scripts/kind/secrets-bootstrap.sh           # one-time: seed app secrets into the cluster
-scripts/kind/argocd-bootstrap.sh kind            # install ArgoCD + point it at the kind overlay
-scripts/kind/app-port-forward.sh                 # reach the app locally
-scripts/kind/observability-port-forward.sh       # reach Grafana/Jaeger/ArgoCD/etc.
+scripts/kind/secrets-bootstrap.sh           # one-time: app secrets from .env -> openlex-secrets
+scripts/kind/argocd-bootstrap.sh kind       # install ArgoCD + point it at the kind overlay
+
+# --- wait for the app pods to come up (ArgoCD syncs them), then load data ---
+kubectl -n openlex rollout status deploy/openlex-api deploy/openlex-worker
+scripts/seed/kind-ingest.sh                 # ingest statutes + cases into the cluster DB
+scripts/seed/kind-seed-demo-users.sh        # create the tier-gated demo logins
+
+# --- access ---
+scripts/kind/app-port-forward.sh            # reach the web UI + API locally
+scripts/kind/observability-port-forward.sh  # reach Grafana/Jaeger/ArgoCD/etc.
 ```
+
+> **Fresh-cluster data steps are required, not optional.** kind starts with an empty database:
+> until `kind-ingest.sh` runs, `/query` hard-abstains ("NO CONFIDENT ANSWER FOUND") because
+> retrieval has nothing to return; until `kind-seed-demo-users.sh` runs, `/auth/login` returns
+> 401 (registration is disabled, so the seeded demo users are the only accounts). Both are
+> idempotent — safe to re-run. (docker-compose has the same two steps via
+> `scripts/compose/ingest.sh` + `scripts/seed/seed-demo-users.sh`; on kind they run inside the
+> worker/api pods instead of `docker compose exec`.)
 
 kind has no ingress, so everything is reached over `kubectl port-forward` (the two scripts
 above open all of these):
