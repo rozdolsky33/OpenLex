@@ -44,6 +44,13 @@ Adopt **Argo CD Image Updater** and take image-tag commits off `develop`'s mainl
 `develop` therefore stays **code-only** — human commits, no machine image commits — so
 `develop → main` promotions are always clean, and there is no push race.
 
+Image Updater v1.2.x is **CRD-based**: it acts on `ImageUpdater` custom resources, not directly
+on the Application annotations. So an `ImageUpdater` CR
+(`infra/argocd/apps/kind/imageupdater-openlex.yaml`) selects the openlex app with
+`useAnnotations: true`, which tells the controller to read the image config from that app's
+annotations — the config still lives on the Application. The `openlex-kind` AppProject's
+`sourceRepos` must also allow the `argoproj.github.io/argo-helm` chart repo.
+
 Credentials (kind-only, from `.env` via `scripts/kind/secrets-bootstrap.sh`): a `repo`-scoped
 `GIT_WRITE_TOKEN` for the git write-back (`argocd-image-updater-git` Secret) and GHCR read creds
 (`ghcr` Secret). The `gitops/kind` branch is initialized once with
