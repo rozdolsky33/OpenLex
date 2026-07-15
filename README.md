@@ -7,95 +7,358 @@
 [![evaluation](https://github.com/rozdolsky33/OpenLex/actions/workflows/evaluation.yml/badge.svg)](https://github.com/rozdolsky33/OpenLex/actions/workflows/evaluation.yml)
 [![evaluation report](https://img.shields.io/badge/evaluation%20report-live%20on%20pages-blue)](https://rozdolsky33.github.io/OpenLex/)
 
-A retrieval-augmented legal *research* assistant scoped to New York landlord-tenant
-law. It answers questions by retrieving relevant statute and case-law passages and
-asking Claude to answer **only** from that retrieved context, with citations.
+A retrieval-augmented generation (RAG) legal **research** assistant scoped to New York
+landlord-tenant law. It answers questions by retrieving relevant statute and case-law
+passages and asking Claude to answer **only** from that retrieved context, with citations.
 
-This is **legal information, not legal advice**, and is not a substitute for a
-licensed attorney. See the disclaimer shown in the UI on every response.
+> **This is legal information, not legal advice**, and is not a substitute for a licensed
+> attorney. Every response carries the disclaimer defined in `legal_models.schemas`
+> (`DISCLAIMER`) and shown in the UI.
 
-## Data sources
+**What this project is really about.** OpenLex is a portfolio POC that demonstrates
+SRE / Platform-Engineering practice applied to an AI product: the legal corpus is deliberately
+*credible, not exhaustive*, while the operational depth — containerized local dev, a real
+GitOps + Kubernetes path, full observability, CI/CD gates, and infrastructure-as-code — is the
+actual thing being showcased.
 
-- **Statutes**: [NY Open Legislation API](https://legislation.nysenate.gov/api/3/) —
-  RPAPL (eviction/holdover), RPL (warranty of habitability), GOL (security deposits).
-- **Cases**: a hand-curated seed file of real NY landlord-tenant decisions
-  (`pipelines/ingestion/ny_case_law/seed_cases.json`) — three NY Court of Appeals cases (Park
-  West Management v. Mitchell on the warranty of habitability, Regina Metropolitan v. NYS
-  DHCR on rent-overcharge calculation, Mallory Associates v. Barving Realty on security
-  deposits as trust funds). No automated case-law text source exists (CourtListener's detail
-  API needs a token and its public pages, linked court PDFs, and Justia are all bot-blocked or
-  auth-gated — see [ADR-0006](docs/decisions/0006-case-law-ingestion.md)), so opinion text is
-  fetched once via an authenticated CourtListener API token, not scraped live.
+---
+
+## Table of contents
+
+- [High-level architecture](#high-level-architecture)
+- [How a question gets answered (the RAG flow)](#how-a-question-gets-answered-the-rag-flow)
+- [Components](#components)
+- [Data sources &amp; integrations](#data-sources--integrations)
+- [Configuration](#configuration)
+- [Prerequisites](#prerequisites)
+- [Running it — three ways](#running-it--three-ways)
+  - [1. Docker Compose (default dev loop)](#1-docker-compose--default-dev-loop)
+  - [2. kind (local Kubernetes + GitOps + observability)](#2-kind--local-kubernetes--gitops--observability)
+  - [3. AWS EKS (production demo)](#3-aws-eks--production-demo)
+- [Repository layout](#repository-layout)
+- [Testing](#testing)
+- [CI/CD and legal-accuracy evaluation](#cicd-and-legal-accuracy-evaluation)
+- [Further documentation](#further-documentation)
+
+---
+
+## High-level architecture
+
+OpenLex is a **monorepo, modular monolith** (not microservices — see
+[ADR-0001](docs/decisions/0001-monorepo-restructure.md)): one `uv` workspace of apps and
+shared packages. Three runtime components sit in front of a single Postgres database with the
+`pgvector` extension, and Claude is called for the generation step.
+
+```
+                 ┌─────────────┐         ┌──────────────────────────┐
+   user ───────▶ │  apps/web   │ ──HTTP─▶│        apps/api          │
+                 │ React chat  │         │  FastAPI: auth · quota   │
+                 │   UI (Vite) │◀────────│  retrieve → generate     │
+                 └─────────────┘         └────────┬─────────┬───────┘
+                                                  │         │
+                                     hybrid search│         │grounded generation
+                                                  ▼         ▼
+                                       ┌────────────────┐  ┌──────────────┐
+                                       │  Postgres +    │  │   Claude     │
+                                       │   pgvector     │  │ (Anthropic)  │
+                                       │ documents /    │  └──────────────┘
+                                       │ chunks (+FTS)  │
+                                       └───────▲────────┘
+                                               │ writes embedded chunks
+                                       ┌───────┴────────┐
+                                       │   apps/worker  │  ← NY Open Legislation API (statutes)
+                                       │ ingestion CLI  │  ← curated case-law seed (cases)
+                                       └────────────────┘
+```
+
+- **`apps/web`** — the only surface users touch. Talks to the API over HTTP.
+- **`apps/api`** — the online request path: authentication, per-tier quota, hybrid retrieval,
+  and grounded generation. The **only** component users/the web app call directly.
+- **`apps/worker`** — the offline batch path: ingests source data (statutes + cases),
+  embeds it, and writes it into Postgres. Never on the request path.
+- **Postgres + pgvector** — one store holding `documents` (immutable raw sources) and
+  `chunks` (passages with a 384-dim embedding vector *and* a full-text-search `tsv` column).
+- **Claude** — called by the API for the final grounded answer; called nowhere else.
+
+For rendered diagrams see [`docs/infrastructure/architecture-diagrams.md`](docs/infrastructure/architecture-diagrams.md).
+
+---
+
+## How a question gets answered (the RAG flow)
+
+RAG is **hybrid retrieval + grounded generation**. Two phases, split across the worker
+(offline) and the API (online):
+
+**Ingestion (worker, offline):** fetch/seed → normalize → chunk → **embed** → upsert.
+Each chunk's text is turned into a 384-dim vector by the embedding model and stored in
+`chunks.embedding`; Postgres separately maintains a generated `tsv` column for keyword search.
+
+**Query (API, online), per `POST /query`:**
+1. **Authenticate** the bearer token, then **check &amp; consume quota** for the user's tier
+   (429 if exhausted).
+2. **Embed the question** with the same embedding model (using BGE's asymmetric *query*
+   prefix — see below).
+3. **Hybrid search** (`packages/legal_retrieval/search.py`): pgvector cosine similarity
+   (HNSW index) **and** Postgres full-text search (GIN index) run in parallel, then are fused
+   by **Reciprocal Rank Fusion** — neither signal alone, both combined. Results are collapsed
+   to one best chunk per document so a long case can't crowd out a relevant statute.
+4. **Grounded generation** (`packages/legal_generation`): the retrieved passages are handed to
+   Claude with a tool-forced, answer-only-from-context prompt. If retrieval returns nothing,
+   the system **hard-abstains** rather than inventing an answer. Every response returns
+   `citations`, an `abstained` flag, and the fixed legal `disclaimer` (the response contract —
+   see the `grounded-answer-contract` skill and
+   [ADR-0002](docs/decisions/0002-retrieval-and-generation-design.md)).
+
+### The embedding model
+
+```
+EMBEDDING_MODEL_NAME=BAAI/bge-small-en-v1.5
+```
+
+`BAAI/bge-small-en-v1.5` is a small, open-source sentence-embedding model (384-dimensional
+output) run **locally** via `sentence-transformers` + `torch` — **no API key, no external
+call, no cost**. It's downloaded from Hugging Face on first use and cached. It lives in
+`packages/legal_retrieval/embeddings.py` and is used in exactly two places:
+
+| Where | Function | What it embeds |
+|-------|----------|----------------|
+| **Worker**, during ingestion (`pipelines/indexing/_shared.py`) | `embed_passages()` | each chunk of statute/case text → written to `chunks.embedding` |
+| **API**, at query time (`legal_retrieval/search.py`) | `embed_query()` | the incoming user question → used for the pgvector similarity search |
+
+Two important properties:
+
+- **BGE is asymmetric.** Queries are embedded *with* an instruction prefix
+  (`"Represent this sentence for searching relevant passages: "`), passages *without* one.
+  Getting this backwards measurably degrades retrieval (see
+  [`ml/model_cards/bge-small-en-v1.5.md`](ml/model_cards/bge-small-en-v1.5.md)).
+- **The dimension is load-bearing.** The `chunks.embedding` column is `vector(384)`; changing
+  to a model with a different output dimension requires a migration **and** re-embedding the
+  whole corpus. The API preloads the model at startup (FastAPI `lifespan`) so the first real
+  request doesn't pay the multi-second load.
+
+---
+
+## Components
+
+| Component | Path | Runtime | Role |
+|-----------|------|---------|------|
+| **API** | `apps/api/` | long-running FastAPI server | Online request path. `POST /auth/register` + `POST /auth/login` (JWT), `POST /query` (auth + quota + retrieve + generate), `GET /healthz`, `GET /metrics` (Prometheus). Ingestion endpoint is a deliberate `501` — ingestion is worker-only. |
+| **Worker** | `apps/worker/` | one-shot CLI (idle heartbeat otherwise) | Offline ingestion: `python -m openlex_worker ingest --source {statutes\|cases\|all}`. The only component that imports `pipelines/` and the only one that embeds passages. Kept separate so heavy `torch`/model work never touches the online API. |
+| **Web UI** | `apps/web/` | Vite + React + TypeScript + Tailwind | Auth-gated chat UI; renders answers with citations and the per-answer disclaimer. Multi-turn, single active conversation. See [ADR-0003](docs/decisions/0003-conversational-chat-and-web-ui.md). |
+| **Database** | `migrations/postgres/` | Postgres 16 + `pgvector` | `documents` + `chunks`; HNSW index for vectors, GIN index for full-text search. |
+| **Shared packages** | `packages/` | libraries | `legal_models` (schemas/ORM), `legal_retrieval` (embeddings + hybrid search), `legal_generation` (grounded answers), `legal_parsing` (chunking/normalization), `shared` (config, DB session). |
+
+---
+
+## Data sources &amp; integrations
+
+OpenLex talks to three external things. Two shape the **data**; one is the **LLM**.
+
+| Integration | Env var | Used at runtime? | Role |
+|-------------|---------|:---:|------|
+| **Anthropic (Claude)** | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | ✅ yes — API | The generation step. Claude turns retrieved passages into a grounded, cited answer. Required for the app to answer anything. |
+| **NY Open Legislation API** | `NY_OPEN_LEG_API_KEY`, `NY_OPEN_LEG_BASE_URL` | ✅ yes — worker | **Statute source.** The worker fetches live statute text (RPAPL, RPL, GOL sections) from `legislation.nysenate.gov` during `ingest --source statutes`. Free self-serve key. Without it, statute ingestion fails; the app can still serve whatever is already in the DB. |
+| **Embedding model** | `EMBEDDING_MODEL_NAME` | ✅ yes — API + worker | Local model, **no key**. See [the embedding-model section](#the-embedding-model) above. |
+| **CourtListener** | `COURTLISTENER_API_TOKEN` | ❌ **no** | **Case-law source — curation only.** Case-law full text has no viable live-fetch path (CourtListener's detail API is token-gated; its public pages, court PDFs, and Justia are all bot-blocked — see [ADR-0006](docs/decisions/0006-case-law-ingestion.md)). Opinion text was fetched **once, out-of-band** with this token and baked into `pipelines/ingestion/ny_case_law/seed_cases.json`. The running app never reads this token. |
+
+**Why statutes are fetched live but cases are seeded:** statute text is cleanly available from
+a free public API, so the worker pulls it on demand and can re-check freshness
+(`scripts/check_statute_freshness.py`). Case-law full text is not automatable, so it's a
+hand-curated seed of **five** real NY landlord-tenant decisions — e.g. Park West Management
+v. Mitchell (warranty of habitability), Regina Metropolitan v. NYS DHCR (rent-overcharge), and
+Mallory Associates v. Barving Realty (security deposits as trust funds), plus Chinatown
+Apartments v. Chu Cho Lam and ATM One v. Landaverde.
+
+> **Other tokens you may see in `.env.example`** — `COURTLISTENER_API_TOKEN`, `GHCR_USERNAME`,
+> and `GHCR_PAT` are **bootstrap/curation-only** and are *not* wired into application config
+> (`openlex_shared.config.Settings`). GHCR credentials are used once by
+> `scripts/kind-ghcr-pull-secret-bootstrap.sh` to let a kind cluster pull private images.
+
+---
+
+## Configuration
+
+All runtime config is a single pydantic-settings object
+(`packages/shared/src/openlex_shared/config.py`) loaded from `.env`. Copy the template and
+fill it in:
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Required | Default | Consumed by | Purpose |
+|----------|:---:|---------|-------------|---------|
+| `ANTHROPIC_API_KEY` | ✅ | — | api | Claude auth for grounded generation |
+| `ANTHROPIC_MODEL` |  | `claude-sonnet-4-5` | api | Which Claude model answers |
+| `DATABASE_URL` | ✅ | — | api, worker | Postgres+pgvector DSN (asyncpg driver) |
+| `NY_OPEN_LEG_API_KEY` | for statute ingest | — | worker | Fetch statute text |
+| `NY_OPEN_LEG_BASE_URL` |  | `…/api/3` | worker | NY Open Legislation base URL |
+| `EMBEDDING_MODEL_NAME` |  | `BAAI/bge-small-en-v1.5` | api, worker | Local embedding model (384-dim) |
+| `JWT_SECRET_KEY` | ✅ | — | api | Signs/verifies access tokens (`openssl rand -hex 32`) |
+| `JWT_ALGORITHM` / `JWT_EXPIRE_MINUTES` |  | `HS256` / `60` | api | Token algorithm / lifetime |
+| `VITE_API_BASE_URL` | ✅ (web) | `http://localhost:8000` | web build | Where the UI sends requests |
+| `DEMO_{SILVER,GOLD,PLATINUM}_{EMAIL,PASSWORD}` | for demo logins | — | api seed script | The three tier-gated demo accounts (registration is disabled in this demo) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` |  | in-cluster Collector DNS | api, worker | Where traces/metrics/logs are exported |
+| `COURTLISTENER_API_TOKEN` | ❌ | — | *(curation only)* | Not read at runtime |
+| `GHCR_USERNAME` / `GHCR_PAT` | ❌ | — | *(kind bootstrap only)* | Not read at runtime |
+
+> ⚠️ The demo passwords committed in `.env.example` are public placeholders. Replace them
+> before running against anything but a fully local, throwaway stack.
+
+---
 
 ## Prerequisites
 
-- Docker + Docker Compose
-- [uv](https://docs.astral.sh/uv/) (Python package/workspace manager)
-- Node.js 20+ (only needed for local, non-Docker `apps/web` development — see `apps/web/.nvmrc`)
-- An Anthropic API key (https://console.anthropic.com/)
-- A free NY Open Legislation API key (https://legislation.nysenate.gov/static/docs/html/laws.html — self-serve signup)
+- **Docker + Docker Compose** — the default local stack.
+- **[uv](https://docs.astral.sh/uv/)** — Python package/workspace manager.
+- **An Anthropic API key** — https://console.anthropic.com/
+- **A free NY Open Legislation API key** — https://legislation.nysenate.gov/static/docs/html/laws.html
+- **Node.js 20+** — only for local, non-Docker `apps/web` development (see `apps/web/.nvmrc`).
+- **For the kind path:** `kind`, `kubectl`, `helm`, `kustomize`.
+- **For the EKS path:** an AWS account, `terraform`, and the AWS CLI.
 
-## Setup
+---
+
+## Running it — three ways
+
+Three environments of increasing realism. **Docker Compose is the recommended day-to-day loop**;
+kind and EKS exist to demonstrate the Kubernetes/GitOps/production story.
+
+### 1. Docker Compose — default dev loop
+
+The fast, native inner loop. Brings up Postgres, the API, the worker, the web UI, and a full
+**local observability stack** (OpenTelemetry Collector, Jaeger, Prometheus, Grafana).
 
 ```bash
-scripts/bootstrap.sh
+scripts/bootstrap.sh          # creates .env, uv sync, docker compose up --build
 # or manually:
-cp .env.example .env
-# edit .env: set ANTHROPIC_API_KEY and NY_OPEN_LEG_API_KEY
+cp .env.example .env          # then set ANTHROPIC_API_KEY, NY_OPEN_LEG_API_KEY, JWT_SECRET_KEY
 uv sync --all-packages
 docker compose up --build
 ```
 
-Once the containers are up, ingest the data:
+Once the containers are healthy, load the corpus and seed the demo logins:
 
 ```bash
-scripts/ingest.sh all
+scripts/ingest.sh all         # runs the worker's ingestion (statutes + cases)
+scripts/seed-demo-users.sh    # creates the three tier-gated demo accounts
 ```
 
-Then open the UI at http://localhost:5173 (API at http://localhost:8000, docs at `/docs`).
+| Service | URL |
+|---------|-----|
+| Web UI | http://localhost:5173 |
+| API (docs at `/docs`) | http://localhost:8000 |
+| Postgres (pgvector) | localhost:5432 (`openlex`/`openlex`/`openlex`) |
+| Jaeger (traces) | http://localhost:16686 |
+| Prometheus (metrics) | http://localhost:9090 |
+| Grafana (dashboards) | http://localhost:3000 |
 
-**This is the fast, native local dev loop — recommended default for day-to-day iteration.**
-There's also a local **kind** (Kubernetes-in-Docker) cluster with a real ArgoCD GitOps
-pipeline and full observability stack (Prometheus, Grafana, Tempo, Jaeger, Loki), used for
-staging-realistic testing rather than everyday coding — it needs more tools and more machine
-resources than docker-compose does. See
-[`docs/infrastructure/kubernetes-topology.md`](docs/infrastructure/kubernetes-topology.md) for
-what it needs and why, and
-[`docs/infrastructure/dev-workflow-and-branching.md`](docs/infrastructure/dev-workflow-and-branching.md)
-for how the two fit together with CI/CD.
+### 2. kind — local Kubernetes + GitOps + observability
+
+A local **Kubernetes-in-Docker** cluster that mirrors the production topology: a real **ArgoCD
+GitOps** pipeline, an in-cluster Postgres StatefulSet, the api/worker/web workloads, and the
+full observability stack (kube-prometheus-stack, Grafana, Tempo, Jaeger, Loki, Promtail). It's
+for staging-realistic testing, not everyday coding — it needs more tooling and machine
+resources than Compose.
+
+```bash
+scripts/kind-up.sh                          # create the `openlex` kind cluster
+scripts/kind-ghcr-pull-secret-bootstrap.sh  # one-time: let the cluster pull private images
+scripts/kind-secrets-bootstrap.sh           # one-time: seed app secrets into the cluster
+scripts/argocd-bootstrap.sh kind            # install ArgoCD + point it at the kind overlay
+scripts/app-port-forward.sh                 # reach the app locally
+scripts/observability-port-forward.sh       # reach Grafana/Jaeger/etc.
+```
+
+From here it's **GitOps**: a merge to `develop` triggers `.github/workflows/deploy.yml`, which
+builds multi-arch images to GHCR, bumps the image tags in `infra/kubernetes/overlays/kind/`,
+and commits — ArgoCD then reconciles that onto the cluster. See
+[`docs/infrastructure/kubernetes-topology.md`](docs/infrastructure/kubernetes-topology.md).
+Tear down with `scripts/kind-down.sh`.
+
+### 3. AWS EKS — production demo
+
+The production-shaped target. **Terraform** (`infra/terraform/`) provisions the AWS
+substrate — VPC, EKS cluster + OIDC, one Spot node group, an **RDS** Postgres instance, ECR
+repositories, a Route53 hosted zone, and IRSA roles — and deliberately **stops at the cluster
+boundary**. Everything *inside* the cluster (ArgoCD itself, ingress-nginx, cert-manager,
+external-dns, external-secrets, and the app) is owned by ArgoCD via
+`infra/kubernetes/overlays/eks-demo/`.
+
+Key differences from kind, by design:
+
+- **Postgres → Amazon RDS** (not an in-cluster StatefulSet).
+- **Secrets → AWS Secrets Manager**, pulled in by **External Secrets** (`externalsecret-openlex.yaml`).
+- **Web UI → S3 + CloudFront** static hosting (`static-site.tf` + `.github/workflows/deploy-static.yml`),
+  *not* an in-cluster Deployment. Only api + worker run in the cluster.
+- **Ingress** via ingress-nginx + cert-manager + external-dns behind the Route53 domain.
+
+```bash
+cd infra/terraform
+cp terraform.tfvars.example terraform.tfvars   # set your domain, region, etc.
+terraform init -backend-config=backend.hcl
+terraform apply
+# then: wire outputs into the eks-demo manifests, populate Secrets Manager, and:
+aws eks update-kubeconfig --name <cluster_name> --region <region>
+scripts/argocd-bootstrap.sh eks-demo
+```
+
+The full first-time runbook (remote state bootstrap, secret population, DNS delegation, the
+static-site GitHub variables) is in [`infra/terraform/README.md`](infra/terraform/README.md);
+cost/architecture reasoning (no NAT Gateway, one Spot node, no GPUs) is in
+[`docs/infrastructure/aws-eks-cost-estimate.md`](docs/infrastructure/aws-eks-cost-estimate.md).
+
+---
 
 ## Repository layout
 
-This is a **monorepo** (modular monolith, not microservices) — see
-`docs/decisions/0001-monorepo-restructure.md` for the full rationale.
+- `apps/api/` — FastAPI service (routers, auth, quota, request handling). Imports from `packages/`.
+- `apps/worker/` — ingestion runner (`python -m openlex_worker ingest`). Imports `pipelines/` + `packages/`.
+- `apps/web/` — Vite + React + TypeScript chat UI.
+- `packages/` — reusable domain libraries (`legal_models`, `legal_retrieval`, `legal_generation`,
+  `legal_parsing`, `shared`).
+- `pipelines/ingestion/` — per-source adapters (`ny_legislation/`, `ny_case_law/`) producing a
+  common normalized document shape; `pipelines/normalization/` + `pipelines/indexing/` do the
+  normalize→chunk→embed→upsert work.
+- `ml/` — prompt templates, model cards, evaluation assets. Not request-handling code.
+- `schemas/` — versioned JSON Schema for the core data shapes.
+- `migrations/postgres/` — Postgres schema (pgvector + full-text-search indexes).
+- `infra/` — `terraform/` (AWS/EKS substrate), `kubernetes/` (base + kind/eks-demo overlays),
+  `argocd/` (GitOps apps), `monitoring/` + `local-observability/` (the observability stacks).
+- `scripts/` — bootstrap, ingest, evaluate, kind lifecycle, port-forwards, secret bootstraps.
+- `tests/` — `integration/`, `end_to_end/`, and the `evaluation/` golden-question harness.
+  Unit tests live next to their code (`apps/*/tests/`, `packages/*/tests/`).
+- `docker-compose.yml` — Postgres (pgvector), api, worker, web, and the local observability stack.
 
-- `apps/api/` — FastAPI service (routers, request handling). Imports from `packages/`.
-- `apps/worker/` — scheduled ingestion runner. Imports from `pipelines/` and `packages/`.
-- `apps/web/` — Vite + React + TypeScript chat UI (auth-gated, single-conversation, citations
-  + disclaimer shown per answer — see
-  [ADR-0003](docs/decisions/0003-conversational-chat-and-web-ui.md)).
-- `packages/` — reusable domain libraries: `legal_models` (schemas/ORM), `legal_retrieval`
-  (hybrid pgvector + Postgres FTS), `legal_generation` (grounded-answer contract),
-  `legal_parsing` (chunking/normalization), `shared` (config, DB session).
-- `pipelines/ingestion/` — per-source adapters (`ny_legislation/`, `ny_case_law/`), all
-  producing the same normalized document shape.
-- `ml/` — prompt templates, evaluation assets, model cards. Not production request-handling
-  code.
-- `schemas/` — versioned JSON Schema for the core data shapes (document, citation, retrieval
-  result, answer).
-- `migrations/postgres/` — Postgres schema (pgvector + full-text search indexes).
-- `infra/` — deployment config (stubbed — this runs on local `docker-compose` today).
-- `tests/` — integration, end-to-end, and the golden-question legal-accuracy evaluation
-  harness. Unit tests live next to their code (`apps/*/tests/`, `packages/*/tests/`).
-- `docker-compose.yml` — Postgres (pgvector), api, worker, web.
+See [`docs/`](docs/) for architecture documentation and decision records (ADRs).
 
-See `docs/` for architecture documentation and decision records.
+---
+
+## Testing
+
+```bash
+uv run pytest                                  # unit tests (root pyproject sets testpaths)
+uv run ruff check . && uv run ruff format .    # lint + format
+uv run mypy apps packages                      # typecheck
+scripts/test-db.sh up                          # start db-test (pgvector on :5544) for integration tests
+uv run pytest tests/integration                # real-DB integration tests
+scripts/evaluate.sh                            # golden-question legal-accuracy eval (guarded; real API)
+```
+
+The `verify` skill runs the project's full gate (lint, types, unit, and real-DB integration
+tests) before any change is claimed done.
+
+---
 
 ## CI/CD and legal-accuracy evaluation
 
 📊 **[Visual pipeline diagram](https://claude.ai/code/artifact/e57e1b47-0323-4a09-81c0-fa62b1a910bc)** —
 all ten workflows mapped across their four triggers (PR quality gates, the `main`-merge guard,
 image build + GitOps deploy on `develop`, and static web deploy on `main`).
+
+> **Git workflow:** open PRs against `develop`, not `main`. `main` is the production branch;
+> a CI guard (`restrict-main-merges.yml`) blocks any PR to `main` that isn't from `develop`.
+> See [`docs/infrastructure/dev-workflow-and-branching.md`](docs/infrastructure/dev-workflow-and-branching.md).
 
 The badges above track two different things, and it's worth being explicit about what each
 one is checking and why:
@@ -138,3 +401,13 @@ against. See `tests/evaluation/README.md` for how to run the suite locally, and
 [ADR-0004](docs/decisions/0004-golden-question-report-and-pages.md) for the full design
 (why a git-native `gh-pages` history store, why divergence is flagged the way it is, why the
 freshness check runs before any Claude spend).
+
+---
+
+## Further documentation
+
+- **Decision records:** [`docs/decisions/`](docs/decisions/) — monorepo structure, retrieval/
+  generation design, chat UI, evaluation reporting, local-dev hardening, case-law ingestion.
+- **Infrastructure:** [`docs/infrastructure/`](docs/infrastructure/) — architecture diagrams,
+  Kubernetes topology, dev workflow &amp; branching, EKS cost estimate, MLOps guide.
+- **Project guidance for AI agents:** [`CLAUDE.md`](CLAUDE.md).
