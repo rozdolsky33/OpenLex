@@ -93,6 +93,10 @@ See `docs/` for architecture documentation and decision records.
 
 ## CI/CD and legal-accuracy evaluation
 
+📊 **[Visual pipeline diagram](https://claude.ai/code/artifact/e57e1b47-0323-4a09-81c0-fa62b1a910bc)** —
+all ten workflows mapped across their four triggers (PR quality gates, the `main`-merge guard,
+image build + GitOps deploy on `develop`, and static web deploy on `main`).
+
 The badges above track two different things, and it's worth being explicit about what each
 one is checking and why:
 
