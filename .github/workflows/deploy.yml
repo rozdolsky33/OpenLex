@@ -14,10 +14,11 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     concurrency:
+      # Serialize builds per develop push (no cancel) so concurrent runs don't race the GHCR
+      # registry. The job no longer commits to git (Argo CD Image Updater owns image updates),
+      # so the old non-fast-forward-push concern is gone -- this is just build hygiene now.
       group: deploy-develop
-      cancel-in-progress: false # queue, don't cancel/collide -- primary defense against a
-        # human merge to develop landing mid-run and making the final `git push origin
-        # HEAD:develop` a non-fast-forward rejection.
+      cancel-in-progress: false
     env:
       REGISTRY: ghcr.io
       IMAGE_OWNER: ${{ github.repository_owner }}
@@ -78,43 +79,9 @@ jobs:
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/openlex-web:${{ github.sha }}
 
-      - name: Bump image tags in the kind overlay and push to develop
-        # Rebase-safe against a concurrent develop update: re-sync onto the latest develop and
-        # re-apply the kustomize image bump on each attempt. The `concurrency` block serializes
-        # deploy runs but can't stop a human PR merge from advancing develop between this job's
-        # checkout and its push -- which used to make `git push HEAD:develop` a non-fast-forward
-        # rejection (seen live during rapid successive merges). Retrying onto latest develop
-        # fixes that; the last deploy run still wins with the newest image tags.
-        #
-        # Pushes with this job's own GITHUB_TOKEN (checkout@v4's persist-credentials) do NOT
-        # re-trigger workflow runs -- this is what stops this bot commit from re-triggering
-        # deploy.yml in an infinite loop. Do not swap for a PAT without addressing that loop.
-        run: |
-          curl -sL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.4.3/kustomize_v5.4.3_linux_amd64.tar.gz" | tar xz
-          KUSTOMIZE="$(pwd)/kustomize"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          for attempt in 1 2 3 4 5; do
-            git fetch --quiet origin develop
-            git reset --hard --quiet origin/develop
-            ( cd infra/kubernetes/overlays/kind
-              "${KUSTOMIZE}" edit set image \
-                "openlex-api=${REGISTRY}/${IMAGE_OWNER}/openlex-api:${GITHUB_SHA}" \
-                "openlex-worker=${REGISTRY}/${IMAGE_OWNER}/openlex-worker:${GITHUB_SHA}" \
-                "openlex-web=${REGISTRY}/${IMAGE_OWNER}/openlex-web:${GITHUB_SHA}" )
-            git add infra/kubernetes/overlays/kind/kustomization.yaml
-            if git diff --cached --quiet; then
-              echo "No image-tag changes to commit (rebuilt identical digests)."
-              exit 0
-            fi
-            git commit -m "chore: deploy ${GITHUB_SHA}"
-            if git push origin HEAD:develop; then
-              echo "Pushed tag bump on attempt ${attempt}."
-              exit 0
-            fi
-            echo "Push rejected on attempt ${attempt} (develop advanced) -- re-syncing and retrying."
-            sleep "$((attempt * 3))"
-          done
-          echo "Failed to push the deploy tag bump after 5 attempts." >&2
-          exit 1
+      # No image-tag commit here on purpose. Argo CD Image Updater
+      # (infra/argocd/apps/kind/app-argocd-image-updater.yaml) watches GHCR, picks the
+      # newest-built image, and git-writes the kustomize tags to the `gitops/kind` branch that
+      # the openlex Application tracks. This keeps develop code-only -- no GITHUB_TOKEN bot
+      # commit on develop's mainline, which previously caused non-fast-forward races and blocked
+      # develop->main promotions (bot commits can't get the required CI checks).

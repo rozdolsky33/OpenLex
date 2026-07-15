@@ -2,7 +2,7 @@
   "id": null,
   "uid": "openlex-worker-ingestion",
   "title": "Worker — Ingestion Runs",
-  "description": "openlex-worker ingestion run metrics: documents/chunks ingested, run count by status, and run duration by source. Sourced from the worker's openlex_ingest_* OTLP metrics (apps/worker/src/openlex_worker/cli.py), pushed to the OTel Collector and re-exposed to Prometheus via the collector's prometheus exporter (infra/monitoring/otel-collector). Note: ingestion runs are short-lived exec processes, so counters reset per run -- increase()/rate() over the panel range is the intended read, not the raw counter value.",
+  "description": "openlex-worker ingestion run metrics: documents/chunks ingested, run count by status, and run duration by source. Sourced from the worker's openlex_ingest_* OTLP metrics (apps/worker/src/openlex_worker/cli.py), pushed to the OTel Collector and re-exposed to Prometheus via the collector's prometheus exporter (infra/monitoring/otel-collector). Note: ingestion runs are short-lived exec processes that push a *cumulative* OTLP counter at its final value and then exit, so Prometheus scrapes a flat line -- increase()/rate() over that flat line reads 0. Panels therefore use max_over_time() over the range to read each run's accumulated value (summed across per-run series), with `or vector(0)` so a cluster that has not ingested yet shows 0 instead of \"No data\".",
   "tags": ["openlex", "worker", "ingestion"],
   "timezone": "browser",
   "schemaVersion": 39,
@@ -17,46 +17,46 @@
       "id": 1,
       "type": "stat",
       "title": "Documents ingested (range)",
-      "description": "sum(increase(openlex_ingest_documents_total[$__range]))",
+      "description": "Batch job pushes a cumulative counter, so read its value with max_over_time -- increase() sees a flat line and reports 0. sum(max_over_time(openlex_ingest_documents_total[$__range])) or vector(0)",
       "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "blue" } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area", "textMode": "value" },
       "targets": [
-        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(increase(openlex_ingest_documents_total[$__range]))" }
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(max_over_time(openlex_ingest_documents_total[$__range])) or vector(0)" }
       ]
     },
     {
       "id": 2,
       "type": "stat",
       "title": "Chunks created (range)",
-      "description": "sum(increase(openlex_ingest_chunks_total[$__range]))",
+      "description": "sum(max_over_time(openlex_ingest_chunks_total[$__range])) or vector(0)",
       "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "purple" } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area", "textMode": "value" },
       "targets": [
-        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(increase(openlex_ingest_chunks_total[$__range]))" }
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(max_over_time(openlex_ingest_chunks_total[$__range])) or vector(0)" }
       ]
     },
     {
       "id": 3,
       "type": "stat",
       "title": "Ingest runs (range)",
-      "description": "sum(increase(openlex_ingest_runs_total[$__range]))",
+      "description": "sum(max_over_time(openlex_ingest_runs_total[$__range])) or vector(0)",
       "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "green" } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area", "textMode": "value" },
       "targets": [
-        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(increase(openlex_ingest_runs_total[$__range]))" }
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(max_over_time(openlex_ingest_runs_total[$__range])) or vector(0)" }
       ]
     },
     {
       "id": 4,
       "type": "stat",
       "title": "Failed runs (range)",
-      "description": "runs that ended in partial_failure -- sum(increase(openlex_ingest_runs_total{status=\"partial_failure\"}[$__range]))",
+      "description": "runs that ended in partial_failure -- sum(max_over_time(openlex_ingest_runs_total{status=\"partial_failure\"}[$__range])) or vector(0)",
       "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
@@ -68,46 +68,46 @@
       },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none", "textMode": "value" },
       "targets": [
-        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(increase(openlex_ingest_runs_total{status=\"partial_failure\"}[$__range]))" }
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(max_over_time(openlex_ingest_runs_total{status=\"partial_failure\"}[$__range])) or vector(0)" }
       ]
     },
     {
       "id": 5,
       "type": "timeseries",
       "title": "Documents ingested by source",
-      "description": "sum by (source) (increase(openlex_ingest_documents_total[$__rate_interval]))",
+      "description": "sum by (source) (max_over_time(openlex_ingest_documents_total[$__rate_interval]))",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "fillOpacity": 40, "showPoints": "never" } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [
-        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (source) (increase(openlex_ingest_documents_total[$__rate_interval]))", "legendFormat": "{{source}}" }
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (source) (max_over_time(openlex_ingest_documents_total[$__rate_interval]))", "legendFormat": "{{source}}" }
       ]
     },
     {
       "id": 6,
       "type": "timeseries",
       "title": "Chunks created by source",
-      "description": "sum by (source) (increase(openlex_ingest_chunks_total[$__rate_interval]))",
+      "description": "sum by (source) (max_over_time(openlex_ingest_chunks_total[$__rate_interval]))",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "fillOpacity": 40, "showPoints": "never" } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [
-        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (source) (increase(openlex_ingest_chunks_total[$__rate_interval]))", "legendFormat": "{{source}}" }
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (source) (max_over_time(openlex_ingest_chunks_total[$__rate_interval]))", "legendFormat": "{{source}}" }
       ]
     },
     {
       "id": 7,
       "type": "timeseries",
       "title": "Ingest runs by status",
-      "description": "sum by (source, status) (increase(openlex_ingest_runs_total[$__rate_interval]))",
+      "description": "sum by (source, status) (max_over_time(openlex_ingest_runs_total[$__rate_interval]))",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "fillOpacity": 60, "showPoints": "never", "stacking": { "mode": "normal" } } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [
-        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (source, status) (increase(openlex_ingest_runs_total[$__rate_interval]))", "legendFormat": "{{source}} · {{status}}" }
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum by (source, status) (max_over_time(openlex_ingest_runs_total[$__rate_interval]))", "legendFormat": "{{source}} · {{status}}" }
       ]
     },
     {
@@ -120,8 +120,8 @@
       "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "auto" } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [
-        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.5, sum by (le, source) (rate(openlex_ingest_duration_seconds_bucket[$__rate_interval])))", "legendFormat": "p50 {{source}}" },
-        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.95, sum by (le, source) (rate(openlex_ingest_duration_seconds_bucket[$__rate_interval])))", "legendFormat": "p95 {{source}}" }
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.5, sum by (le, source) (max_over_time(openlex_ingest_duration_seconds_bucket[$__rate_interval])))", "legendFormat": "p50 {{source}}" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "histogram_quantile(0.95, sum by (le, source) (max_over_time(openlex_ingest_duration_seconds_bucket[$__rate_interval])))", "legendFormat": "p95 {{source}}" }
       ]
     }
   ]

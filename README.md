@@ -278,10 +278,19 @@ resources than Compose.
 roll out, then ingest + seed:
 
 ```bash
-scripts/kind-master.sh up   # cluster -> ghcr secret -> secrets -> argocd -> wait -> ingest -> seed
+scripts/kind-master.sh up    # cluster -> secrets -> gitops branch -> argocd -> wait -> ingest -> seed
 # ...and to tear the cluster down:
 scripts/kind-master.sh down
 ```
+
+> **GitOps image automation (see [ADR-0007](docs/decisions/0007-argocd-image-updater.md)).**
+> `deploy.yml` builds/pushes images but does **not** commit tags to `develop`. **Argo CD Image
+> Updater** watches GHCR and git-writes the image tags to a dedicated **`gitops/kind`** branch
+> that the app tracks — so `develop` stays code-only and `develop → main` promotions never snag
+> on a bot commit. First-time setup: set **`GIT_WRITE_TOKEN`** in `.env` (a GitHub PAT with
+> `repo` scope, for the updater's git write-back). `kind-master.sh up` creates the `gitops/kind`
+> branch automatically if it's missing (or run `scripts/kind/gitops-branch-init.sh` to refresh
+> it to the latest `develop`).
 
 Then open access in separate terminals (these block on `kubectl port-forward`):
 
@@ -329,10 +338,38 @@ above open all of these):
 > ArgoCD's initial admin password:
 > `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d`
 
-From here it's **GitOps**: a merge to `develop` triggers `.github/workflows/deploy.yml`, which
-builds multi-arch images to GHCR, bumps the image tags in `infra/kubernetes/overlays/kind/`,
-and commits — ArgoCD then reconciles that onto the cluster. See
-[`docs/infrastructure/kubernetes-topology.md`](docs/infrastructure/kubernetes-topology.md).
+#### How a code change gets deployed to kind (GitOps)
+
+You just merge to `develop` — the rest is automated. The key idea: the image **build** and the
+image **deployment** are decoupled, and ArgoCD watches a dedicated branch, **not `develop`**.
+
+```
+merge to develop
+   │
+   ├─►  .github/workflows/deploy.yml   builds + pushes ghcr.io/.../openlex-{api,worker,web}:<sha>
+   │                                   (that's ALL CI does now — no commit back to develop)
+   │
+   ├─►  Argo CD Image Updater (in-cluster)   watches GHCR, sees the new image, and git-writes
+   │                                         the kustomize tag to the `gitops/kind` branch
+   │
+   └─►  ArgoCD   tracks `gitops/kind`, sees the new tag, syncs it onto the cluster
+```
+
+**Two branches, two owners:**
+
+- **`develop`** — *your* branch. Human code only, clean history. This is why `develop → main`
+  promotions stay painless: no bot commit ever lands on it.
+- **`gitops/kind`** — the *robot's* branch: "`develop`'s code **plus** the currently-deployed
+  image tag", maintained by Argo CD Image Updater. It's just "what's actually running" — you
+  rarely touch it.
+
+> **This replaced the previous pattern**, where `deploy.yml` itself committed the image tag back
+> to `develop` and ArgoCD watched `develop`. That bot commit on `develop` caused
+> non-fast-forward push races and blocked `develop → main` promotions (a `GITHUB_TOKEN` bot
+> commit can't run the required CI checks). Full rationale + the one-time `GIT_WRITE_TOKEN`
+> setup: [ADR-0007](docs/decisions/0007-argocd-image-updater.md).
+
+See [`docs/infrastructure/kubernetes-topology.md`](docs/infrastructure/kubernetes-topology.md).
 Tear down with `scripts/kind/down.sh`.
 
 ### 3. AWS EKS — production demo
