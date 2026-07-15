@@ -19,9 +19,13 @@
 # GITHUB_ACTIONS_DEPLOY_WEB_ROLE_ARN — GitHub reserves the `GITHUB_` prefix for variable names
 # and rejects it (HTTP 422). Don't rename it back.
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+# Resolve the script dir to an absolute path BEFORE the cd — otherwise the relative
+# ${BASH_SOURCE[0]} would resolve against the new cwd on the source line below and break when
+# the script is invoked from anywhere other than the repo root.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR/../.."
 # shellcheck source=scripts/_lib.sh
-source "$(dirname "${BASH_SOURCE[0]}")/../_lib.sh"
+source "$SCRIPT_DIR/../_lib.sh"
 
 TF_DIR="infra/terraform"
 # Repo defaults to whatever `gh` infers from the cwd's git remote; override with REPO=owner/repo.
