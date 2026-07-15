@@ -14,6 +14,7 @@ spec:
     - https://open-telemetry.github.io/opentelemetry-helm-charts
     - https://grafana.github.io/helm-charts
     - https://jaegertracing.github.io/helm-charts
+    - https://argoproj.github.io/argo-helm  # argocd-image-updater chart (ADR-0007)
   destinations:
     - namespace: openlex
       server: https://kubernetes.default.svc
