@@ -59,6 +59,11 @@ output "github_actions_ecr_push_role_arn" {
   value       = aws_iam_role.github_actions_ecr_push.arn
 }
 
+output "image_updater_role_arn" {
+  description = "Paste into app-argocd-image-updater.yaml's serviceAccount.annotations (eks.amazonaws.com/role-arn) so the updater can read ECR via IRSA"
+  value       = aws_iam_role.image_updater.arn
+}
+
 # Exposed as an output (not just var.domain_name) so scripts/eks/github-deploy-vars.sh can read
 # all four deploy-static values from `terraform output` uniformly — see docs/infrastructure/
 # web-deploy.md.

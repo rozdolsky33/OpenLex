@@ -43,6 +43,7 @@ app that owns it fails to sync. Fill config lines only, from Terraform outputs:
 | `<GITHUB_USERNAME>` | `rozdolsky33` | your GitHub login | `app-oauth2-proxy.yaml` |
 | `<ACME_EMAIL>` | your email | you | `clusterissuer-letsencrypt.yaml` |
 | `<ECR_ACCOUNT>` / `<REGION>` | `651261648885` / `us-east-1` | `terraform output ecr_repository_urls` | `overlays/eks-demo/kustomization.yaml` |
+| `<IMAGE_UPDATER_ROLE_ARN>` | `…:role/openlex-eks-demo-image-updater` | `terraform output image_updater_role_arn` | `app-argocd-image-updater.yaml` |
 
 > These are error-prone precisely because they're scattered and some files have the token on
 > *two* lines (e.g. an ingress `tls.hosts` **and** `rules.host`). Verify none remain on config
@@ -139,12 +140,34 @@ ArgoCD, Grafana, and the app are exposed via ingress-nginx + the `*.openlex.arwe
 once cert-manager issues certs and external-dns creates the records. Before DNS/certs settle you
 can port-forward — see `scripts/eks/observability-port-forward.sh`.
 
-## Steady state (ongoing deploys)
+## Image promotion — Argo CD Image Updater (ECR)
 
-After bootstrap, you don't re-run anything by hand:
+The eks openlex app doesn't track `main` directly — it tracks a machine-managed **`gitops/eks`**
+branch (the ECR analogue of kind's `gitops/kind`; see ADR-0007). Argo CD Image Updater watches
+ECR, picks the newest-built `openlex-{api,worker}` sha image, and git-writes the kustomize image
+tags onto `gitops/eks` (based on `main`), which the openlex app then syncs. `main` stays code-only.
 
-1. Push to `develop` → `deploy.yml` builds + pushes images (see the ECR gap above).
-2. Argo CD Image Updater bumps the tracked gitops branch.
-3. ArgoCD auto-syncs the new image.
+- **ECR auth is IRSA, not a pull secret.** The updater's ServiceAccount assumes the
+  `image_updater` role (`iam_irsa_image_updater.tf`) and its `ecr-login.sh` script calls
+  `aws ecr get-authorization-token` (the updater image ships the aws CLI). Config lives in
+  `app-argocd-image-updater.yaml`; the per-app image-list / strategy / git-branch annotations
+  live on `app-openlex.yaml`; `imageupdater-openlex.yaml` is the CR that activates it.
+
+**One-time activation (prerequisites):**
+
+1. `terraform apply` — creates the `image_updater` IRSA role; fill `<IMAGE_UPDATER_ROLE_ARN>` in
+   `app-argocd-image-updater.yaml` (`terraform output image_updater_role_arn`).
+2. Create the AWS Secrets Manager secret **`openlex/image-updater-git`** with keys `username`
+   (a GitHub user with push access) and `password` (a `repo`-scoped PAT) — ESO turns it into the
+   `argocd-image-updater-git` Secret (`externalsecret-image-updater-git.yaml`).
+3. Initialize the branch: `scripts/kind/gitops-branch-init.sh eks-demo` (creates `gitops/eks`
+   from `main`).
+
+After that it's hands-off:
+
+1. Push to `develop` → `deploy.yml` builds + pushes `openlex-{api,worker,web}:<sha>` to GHCR **and
+   ECR** (no git commit).
+2. Image Updater picks the newest sha in ECR and git-writes the tags to `gitops/eks`.
+3. ArgoCD syncs the openlex app to the new image.
 
 See [dev-workflow-and-branching.md](./dev-workflow-and-branching.md) for the full flow.
