@@ -9,6 +9,7 @@ on:
 permissions:
   contents: write
   packages: write
+  id-token: write # GitHub OIDC -> assume the ECR-push role (no static AWS keys)
 
 jobs:
   build-and-deploy:
@@ -33,6 +34,21 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Images are pushed to BOTH registries in one build: GHCR (kind pulls from there) and ECR
+      # (eks-demo pulls from there via the node role — see infra/kubernetes/overlays/*). The
+      # ECR-push role is assumed via GitHub OIDC, no static AWS keys; its ARN is the
+      # OPENLEX_ECR_PUSH_ROLE_ARN Actions variable (set by scripts/eks/github-deploy-vars.sh).
+      # See docs/infrastructure/eks-argocd-bootstrap.md.
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.OPENLEX_ECR_PUSH_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Log in to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
 
       # Multi-platform build support -- GitHub-hosted runners are linux/amd64, but this
       # project's kind cluster runs on Apple Silicon (linux/arm64). Without this, every image
@@ -59,7 +75,9 @@ jobs:
           file: apps/api/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/openlex-api:${{ github.sha }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/openlex-api:${{ github.sha }}
+            ${{ steps.ecr-login.outputs.registry }}/openlex-api:${{ github.sha }}
 
       - name: Build and push openlex-worker
         uses: docker/build-push-action@v6
@@ -68,7 +86,9 @@ jobs:
           file: apps/worker/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/openlex-worker:${{ github.sha }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/openlex-worker:${{ github.sha }}
+            ${{ steps.ecr-login.outputs.registry }}/openlex-worker:${{ github.sha }}
 
       - name: Build and push openlex-web
         uses: docker/build-push-action@v6
@@ -77,7 +97,9 @@ jobs:
           file: apps/web/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/openlex-web:${{ github.sha }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/openlex-web:${{ github.sha }}
+            ${{ steps.ecr-login.outputs.registry }}/openlex-web:${{ github.sha }}
 
       # No image-tag commit here on purpose. Argo CD Image Updater
       # (infra/argocd/apps/kind/app-argocd-image-updater.yaml) watches GHCR, picks the

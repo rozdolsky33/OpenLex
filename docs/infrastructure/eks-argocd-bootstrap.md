@@ -52,16 +52,36 @@ app that owns it fails to sync. Fill config lines only, from Terraform outputs:
 >   | grep -vE ':\s*#'   # expect no output (comment lines with <X> are fine)
 > ```
 
-### 3. Images must be in ECR ⚠️ known gap
+### 3. Images in ECR
 
 `overlays/eks-demo/kustomization.yaml` rewrites the api/worker images to
 `<ECR_ACCOUNT>.dkr.ecr.<REGION>.amazonaws.com/openlex-{api,worker}`, and EKS nodes pull from ECR
-via their node-role's `AmazonEC2ContainerRegistryReadOnly` policy. **But `deploy.yml` currently
-pushes images to GHCR (`ghcr.io`), not ECR**, and the ECR repos (created by `ecr.tf`) are empty.
-Until this is reconciled, the openlex app will `ImagePullBackOff`. Options: add an ECR
-build/push (or a GHCR→ECR mirror) to CI, or push once by hand. Track this before expecting the
-openlex app to come up. (The platform Helm charts pull from their own public registries and are
-unaffected.)
+via their node-role's `AmazonEC2ContainerRegistryReadOnly` policy (no in-cluster pull secret).
+
+`deploy.yml` pushes each image to **both** registries in one build: GHCR (kind pulls from there)
+and ECR (eks-demo). It authenticates to ECR with GitHub OIDC — no static keys — assuming the
+`github_actions_ecr_push` role (`iam_oidc_github_actions_ecr.tf`, scoped to `develop`). Two
+things must be in place for the ECR push to work:
+
+- `terraform apply` has created the `github_actions_ecr_push` role, and
+- the `OPENLEX_ECR_PUSH_ROLE_ARN` Actions variable is set — `scripts/eks/github-deploy-vars.sh`
+  sets it from `terraform output github_actions_ecr_push_role_arn`.
+
+The first push happens on the next `deploy.yml` run (push to `develop`). To seed ECR immediately
+from existing GHCR images without a new build, mirror the multi-arch manifest:
+
+```bash
+aws ecr get-login-password --region us-east-1 \
+  | docker login --username AWS --password-stdin 651261648885.dkr.ecr.us-east-1.amazonaws.com
+for i in openlex-api openlex-worker openlex-web; do
+  docker buildx imagetools create \
+    -t 651261648885.dkr.ecr.us-east-1.amazonaws.com/$i:<SHA> ghcr.io/rozdolsky33/$i:<SHA>
+done
+```
+
+(`buildx imagetools create` copies the amd64+arm64 manifest list; a plain `docker pull/tag/push`
+would flatten it to one arch.) The platform Helm charts pull from their own public registries and
+are unaffected.
 
 ### 4. Secrets
 
