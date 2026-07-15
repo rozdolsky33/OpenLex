@@ -62,15 +62,18 @@ spec:
             resources:
               requests: { cpu: 50m, memory: 256Mi }
               limits: { cpu: 300m, memory: 768Mi }
-            # Anonymous read-only access for the local kind demo, matching docker-compose's
-            # Grafana (which sets GF_AUTH_ANONYMOUS_*). Viewer (not Admin): enough to see
-            # dashboards and query datasources with no login, but no edit/save. eks-demo
-            # deliberately does NOT get this -- its Grafana sits behind oauth2-proxy (see
-            # infra/argocd/apps/eks-demo/), so anonymous stays a kind-only convenience.
+            # Anonymous access for the local kind demo, matching docker-compose's Grafana
+            # (which sets GF_AUTH_ANONYMOUS_*). Editor (not Viewer): Explore and the
+            # Traces/Logs/Metrics/Profiles drill-down apps are gated behind Editor in Grafana,
+            # so a Viewer-role anonymous user sees a reduced left nav (dashboards only). Editor
+            # unlocks the full observability nav with no login; provisioned dashboards stay
+            # read-only (sidecar allowUiUpdates: false), so "Editor" can't clobber them.
+            # eks-demo deliberately does NOT get this -- its Grafana sits behind oauth2-proxy
+            # (see infra/argocd/apps/eks-demo/), so anonymous stays a kind-only convenience.
             grafana.ini:
               auth.anonymous:
                 enabled: true
-                org_role: Viewer
+                org_role: Editor
             additionalDataSources:
               - name: Tempo
                 uid: tempo

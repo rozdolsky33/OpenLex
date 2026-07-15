@@ -55,7 +55,7 @@ up() {
   done_banner "kind cluster is up and populated."
   info "Open access in separate terminals (these block on kubectl port-forward):"
   info "  scripts/kind/app-port-forward.sh            # Web UI :5173, API :8000"
-  info "  scripts/kind/observability-port-forward.sh  # Grafana :3000 (anon Viewer), ArgoCD :8080, Jaeger :16686"
+  info "  scripts/kind/observability-port-forward.sh  # Grafana :3000 (anon Editor), ArgoCD :8080, Jaeger :16686"
   info "Log in to the app with the DEMO_* credentials from your .env."
   info "Re-run any port-forward after this script -- the pods just rolled, so older forwards are stale."
 }

@@ -17,7 +17,7 @@ pf "${NAMESPACE}" jaeger 16686:16686
 # argocd-server serves both the UI and gRPC API over the same HTTPS port.
 pf "${ARGOCD_NAMESPACE}" argocd-server 8080:443
 
-echo "Grafana:      http://localhost:3000  (anonymous Viewer -- no login needed to view)"
+echo "Grafana:      http://localhost:3000  (anonymous Editor -- full nav, no login)"
 echo "Prometheus:   http://localhost:9090"
 echo "Alertmanager: http://localhost:9093"
 echo "OTLP/HTTP:    http://localhost:4318  (apps/web browser tracing -- see apps/web/src/telemetry.ts)"
