@@ -6,11 +6,29 @@ kind: Application
 metadata:
   name: openlex
   namespace: argocd
+  # Argo CD Image Updater config (see app-argocd-image-updater.yaml). deploy.yml pushes
+  # ghcr.io/.../openlex-{api,worker,web}:<sha> images but no longer commits tag bumps; the
+  # updater picks the newest-built image and git-writes the kustomize tags to the `gitops/kind`
+  # branch (based on develop), which this Application then tracks. Keeps develop code-only.
+  annotations:
+    # Single line, no spaces after commas (the updater would otherwise read " openlex-worker"
+    # with a leading space as the alias). alias=image maps to the kustomize image name.
+    argocd-image-updater.argoproj.io/image-list: "openlex-api=ghcr.io/rozdolsky33/openlex-api,openlex-worker=ghcr.io/rozdolsky33/openlex-worker,openlex-web=ghcr.io/rozdolsky33/openlex-web"
+    argocd-image-updater.argoproj.io/update-strategy: newest-build
+    # Only consider immutable 40-hex commit-sha tags (deploy.yml tags images with github.sha).
+    argocd-image-updater.argoproj.io/allow-tags: regexp:^[0-9a-f]{40}$
+    argocd-image-updater.argoproj.io/write-back-method: git:secret:argocd/argocd-image-updater-git
+    argocd-image-updater.argoproj.io/write-back-target: kustomization
+    # base:target -- base each write on develop (latest code), commit to gitops/kind.
+    argocd-image-updater.argoproj.io/git-branch: develop:gitops/kind
 spec:
   project: openlex-kind
   source:
     repoURL: https://github.com/rozdolsky33/OpenLex.git
-    targetRevision: develop
+    # The machine-managed image-state branch (develop + current image tags), written by the
+    # image updater. develop itself never gets image-tag commits, so develop->main promotions
+    # stay clean.
+    targetRevision: gitops/kind
     path: infra/kubernetes/overlays/kind
   destination:
     server: https://kubernetes.default.svc

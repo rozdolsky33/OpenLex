@@ -33,6 +33,14 @@ up() {
   step "Bootstrap app secrets from .env -> openlex-secrets"
   scripts/kind/secrets-bootstrap.sh
 
+  step "Ensure the gitops/kind image-state branch exists (openlex app tracks it)"
+  if git ls-remote --exit-code --heads origin gitops/kind >/dev/null 2>&1; then
+    ok "gitops/kind exists (Argo CD Image Updater keeps it current)"
+  else
+    info "creating gitops/kind from origin/develop..."
+    scripts/kind/gitops-branch-init.sh
+  fi
+
   step "Install ArgoCD + sync the app-of-apps"
   scripts/kind/argocd-bootstrap.sh kind
 
