@@ -9,7 +9,9 @@ namespace: openlex
 resources:
   - ../../base/api
   - ../../base/worker
-  - externalsecret-openlex.yaml
+  # openlex-secrets is created earlier (root-managed, wave 0) by
+  # infra/argocd/apps/eks-demo/externalsecret-openlex-secrets.yaml so wave-0 consumers
+  # (postgres-exporter) don't deadlock on a wave-1 Secret — api/worker just consume it by name.
   - ingress-api.yaml
   - pdb-openlex-api.yaml
   - storageclass-gp3.yaml
