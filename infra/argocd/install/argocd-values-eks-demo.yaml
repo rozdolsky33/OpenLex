@@ -19,8 +19,12 @@ server:
 
 repoServer:
   resources:
-    requests: { cpu: 50m, memory: 128Mi }
-    limits: { cpu: 300m, memory: 256Mi }
+    # 256Mi OOMKills the repo-server during the initial bootstrap: it renders ~14 Helm charts
+    # (kube-prometheus-stack, loki, tempo, cert-manager, …) concurrently, and the big charts
+    # spike memory. Raised so the first sync doesn't crash-loop (connection refused ->
+    # ComparisonError on every app). Steady-state usage is much lower.
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 768Mi }
 
 applicationSet:
   enabled: false
@@ -35,5 +39,8 @@ redis:
 
 controller:
   resources:
-    requests: { cpu: 50m, memory: 128Mi }
-    limits: { cpu: 300m, memory: 256Mi }
+    # Like the repo-server above, 256Mi OOMKills the application-controller during bootstrap —
+    # it reconciles all ~14 child apps at once (kube-prometheus-stack alone has a large resource
+    # tree). Raised so it doesn't crash-loop while the stack converges.
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 768Mi }

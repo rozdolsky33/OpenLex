@@ -105,6 +105,34 @@ there. Watch it:
 kubectl -n argocd get applications
 ```
 
+## First-run fixes baked into this repo
+
+The very first real bootstrap of this stack surfaced a cascade of ordering/resource bugs. All are
+now fixed in code — documented here so the behavior is understood, not re-discovered:
+
+- **CRD dry-run deadlock.** ArgoCD server-dry-runs every resource up front; the `ClusterIssuer`
+  / `ClusterSecretStore` / `ExternalSecret` failed because their CRDs (installed by the wave `-2`
+  cert-manager / external-secrets apps) don't exist yet, failing the whole root sync atomically.
+  → those resources carry `argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true`.
+- **repo-server & application-controller OOM.** At 256Mi they OOMKill while rendering/reconciling
+  ~14 Helm charts at once (repo-server OOM shows up as `connection refused → ComparisonError` on
+  every app). → both raised to 256Mi req / 768Mi limit in `argocd-values-eks-demo.yaml`. (If you
+  bump these on a *running* controller, its StatefulSet pod may be stuck CrashLooping at the old
+  limit — `kubectl -n argocd delete pod argocd-application-controller-0` to recreate it.)
+- **`openlex-secrets` wave deadlock.** The `ExternalSecret` that creates `openlex-secrets` used to
+  live in the openlex app (wave 1), but wave-0 `postgres-exporter` needs that Secret — and ArgoCD
+  won't reach wave 1 until wave 0 is healthy. → moved to `externalsecret-openlex-secrets.yaml`
+  (root-managed, wave 0), decoupled from the openlex app.
+
+> **postgres-exporter is not a database.** It's a Prometheus exporter that scrapes **RDS** (via
+> `openlex-secrets/POSTGRES_EXPORTER_DSN`). eks-demo has no in-cluster Postgres — keep it.
+
+**Iterating on bootstrap fixes:** `root-eks-demo` tracks `main`, so fixes only take effect once
+merged. To test a fix branch on a live cluster without a merge, temporarily
+`kubectl -n argocd patch application root-eks-demo --type merge -p '{"spec":{"source":{"targetRevision":"<branch>"}}}'`,
+then patch it back to `main` (or `kubectl apply -f infra/argocd/root-apps/root-eks-demo.yaml`)
+once merged.
+
 ## Access
 
 ArgoCD, Grafana, and the app are exposed via ingress-nginx + the `*.openlex.arwest.dev` hosts
