@@ -9,6 +9,10 @@ metadata:
   name: letsencrypt-staging
   annotations:
     argocd.argoproj.io/sync-wave: "0"
+    # cert-manager's CRDs are installed by app-cert-manager.yaml (sync-wave -2). Skip ArgoCD's
+    # up-front server dry-run so this ClusterIssuer doesn't fail validation before that CRD
+    # exists — it applies for real in wave 0, by which point cert-manager is healthy.
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   acme:
     server: https://acme-staging-v02.api.letsencrypt.org/directory
@@ -26,6 +30,10 @@ metadata:
   name: letsencrypt-prod
   annotations:
     argocd.argoproj.io/sync-wave: "0"
+    # cert-manager's CRDs are installed by app-cert-manager.yaml (sync-wave -2). Skip ArgoCD's
+    # up-front server dry-run so this ClusterIssuer doesn't fail validation before that CRD
+    # exists — it applies for real in wave 0, by which point cert-manager is healthy.
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   acme:
     server: https://acme-v02.api.letsencrypt.org/directory
