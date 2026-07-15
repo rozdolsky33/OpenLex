@@ -113,6 +113,9 @@ services:
       # behind Editor, so Viewer would show a reduced nav. Consistent with the kind Grafana
       # (infra/argocd/apps/kind/app-kube-prometheus-stack.yaml's grafana.ini auth.anonymous).
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Editor
+      # Stable admin password from .env (defaults to "admin" if unset), consistent with the
+      # kind Grafana's grafana-admin secret. Anonymous access works without login regardless.
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
     volumes:
       - ./infra/local-observability/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
       - ./infra/local-observability/grafana-dashboards-provider.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
