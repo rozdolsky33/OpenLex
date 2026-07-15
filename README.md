@@ -229,20 +229,21 @@ kind and EKS exist to demonstrate the Kubernetes/GitOps/production story.
 The fast, native inner loop. Brings up Postgres, the API, the worker, the web UI, and a full
 **local observability stack** (OpenTelemetry Collector, Jaeger, Prometheus, Grafana).
 
+**One command** — bootstrap the stack, wait for the API, ingest the corpus, seed demo users:
+
 ```bash
-scripts/compose/bootstrap.sh          # creates .env, uv sync, docker compose up --build
-# or manually:
 cp .env.example .env          # then set ANTHROPIC_API_KEY, NY_OPEN_LEG_API_KEY, JWT_SECRET_KEY
-uv sync --all-packages
-docker compose up --build
+scripts/compose/bringup.sh    # master: bootstrap -> health-wait -> ingest -> seed users
 ```
 
-Once the containers are healthy, load the corpus and seed the demo logins:
+<details><summary>…or run the steps individually</summary>
 
 ```bash
-scripts/compose/ingest.sh all         # runs the worker's ingestion (statutes + cases)
-scripts/seed/seed-demo-users.sh    # creates the three tier-gated demo accounts
+scripts/compose/bootstrap.sh   # creates .env, uv sync, docker compose up --build
+scripts/compose/ingest.sh all  # ingest statutes + cases
+scripts/seed/seed-demo-users.sh # create the three tier-gated demo accounts
 ```
+</details>
 
 | Service | URL |
 |---------|-----|
@@ -261,22 +262,34 @@ full observability stack (kube-prometheus-stack, Grafana, Tempo, Jaeger, Loki, P
 for staging-realistic testing, not everyday coding — it needs more tooling and machine
 resources than Compose.
 
-```bash
-# --- cluster + platform bring-up ---
-scripts/kind/up.sh                          # create the `openlex` kind cluster
-scripts/kind/ghcr-pull-secret-bootstrap.sh  # one-time: let the cluster pull private images
-scripts/kind/secrets-bootstrap.sh           # one-time: app secrets from .env -> openlex-secrets
-scripts/kind/argocd-bootstrap.sh kind       # install ArgoCD + point it at the kind overlay
+**One command** — create the cluster, bootstrap secrets, install ArgoCD, wait for the app to
+roll out, then ingest + seed:
 
-# --- wait for the app pods to come up (ArgoCD syncs them), then load data ---
+```bash
+scripts/kind/bringup.sh   # master: up -> ghcr secret -> secrets -> argocd -> wait -> ingest -> seed
+```
+
+Then open access in separate terminals (these block on `kubectl port-forward`):
+
+```bash
+scripts/kind/app-port-forward.sh            # Web UI :5173, API :8000
+scripts/kind/observability-port-forward.sh  # Grafana :3000, ArgoCD :8080, Jaeger :16686
+```
+
+<details><summary>…or run the bring-up steps individually</summary>
+
+```bash
+# cluster + platform
+scripts/kind/up.sh                          # create the `openlex` kind cluster
+scripts/kind/ghcr-pull-secret-bootstrap.sh  # let the cluster pull private GHCR images
+scripts/kind/secrets-bootstrap.sh           # app secrets from .env -> openlex-secrets
+scripts/kind/argocd-bootstrap.sh kind       # install ArgoCD + point it at the kind overlay
+# wait for the app pods (ArgoCD syncs them), then load data
 kubectl -n openlex rollout status deploy/openlex-api deploy/openlex-worker
 scripts/seed/kind-ingest.sh                 # ingest statutes + cases into the cluster DB
 scripts/seed/kind-seed-demo-users.sh        # create the tier-gated demo logins
-
-# --- access ---
-scripts/kind/app-port-forward.sh            # reach the web UI + API locally
-scripts/kind/observability-port-forward.sh  # reach Grafana/Jaeger/ArgoCD/etc.
 ```
+</details>
 
 > **Fresh-cluster data steps are required, not optional.** kind starts with an empty database:
 > until `kind-ingest.sh` runs, `/query` hard-abstains ("NO CONFIDENT ANSWER FOUND") because
