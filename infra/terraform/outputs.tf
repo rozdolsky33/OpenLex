@@ -50,6 +50,14 @@ output "cloudfront_distribution_id" {
 }
 
 output "github_actions_deploy_web_role_arn" {
-  description = "Paste into the GitHub repo's GITHUB_ACTIONS_DEPLOY_WEB_ROLE_ARN Actions variable"
+  description = "Paste into the GitHub repo's OPENLEX_DEPLOY_WEB_ROLE_ARN Actions variable (GitHub reserves the GITHUB_ name prefix)"
   value       = aws_iam_role.github_actions_deploy_web.arn
+}
+
+# Exposed as an output (not just var.domain_name) so scripts/eks/github-deploy-vars.sh can read
+# all four deploy-static values from `terraform output` uniformly — see docs/infrastructure/
+# web-deploy.md.
+output "domain_name" {
+  description = "Base domain — feeds the GitHub repo's OPENLEX_DOMAIN Actions variable"
+  value       = var.domain_name
 }
