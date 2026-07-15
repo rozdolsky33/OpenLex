@@ -62,6 +62,16 @@ spec:
             resources:
               requests: { cpu: 50m, memory: 256Mi }
               limits: { cpu: 300m, memory: 768Mi }
+            # Pin the admin password to a stable Secret sourced from .env (created by
+            # scripts/kind/secrets-bootstrap.sh) instead of the chart's per-sync randAlphaNum,
+            # which mints a NEW admin-password on every ArgoCD sync and breaks `admin` login
+            # (the running Grafana keeps the value from its last boot; the Secret drifts ahead).
+            # existingSecret makes the chart stop generating one and Grafana read this fixed
+            # value. Grafana's DB is emptyDir here, so a pod restart cleanly re-applies it.
+            admin:
+              existingSecret: grafana-admin
+              userKey: admin-user
+              passwordKey: admin-password
             # Anonymous access for the local kind demo, matching docker-compose's Grafana
             # (which sets GF_AUTH_ANONYMOUS_*). Editor (not Viewer): Explore and the
             # Traces/Logs/Metrics/Profiles drill-down apps are gated behind Editor in Grafana,
