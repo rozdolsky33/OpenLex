@@ -109,9 +109,10 @@ services:
     image: grafana/grafana:13.1.0
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
-      # Viewer (not Admin): read-only anonymous access, consistent with the kind Grafana
+      # Editor (not Viewer): Explore + the Traces/Logs/Metrics/Profiles drill-downs are gated
+      # behind Editor, so Viewer would show a reduced nav. Consistent with the kind Grafana
       # (infra/argocd/apps/kind/app-kube-prometheus-stack.yaml's grafana.ini auth.anonymous).
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Editor
     volumes:
       - ./infra/local-observability/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
       - ./infra/local-observability/grafana-dashboards-provider.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
