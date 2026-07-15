@@ -16,8 +16,13 @@ resource "aws_iam_openid_connect_provider" "github_actions" {
   thumbprint_list = [data.tls_certificate.github_actions.certificates[0].sha1_fingerprint]
 }
 
-# Scoped to pushes on main only (deploy-static.yml's own trigger) -- a PR branch's workflow
-# run could never assume this role, even if it tried.
+# Scoped to deploy-static.yml's `environment: production` job. A job that references a GitHub
+# Environment gets an OIDC token whose `sub` is `repo:<owner>/<repo>:environment:<name>` — NOT
+# `...:ref:refs/heads/main` — so the trust must match the environment form or AWS rejects the
+# assume with "Not authorized to perform sts:AssumeRoleWithWebIdentity". To keep the "main only"
+# guarantee, restrict the `production` environment's deployment branches to `main` in GitHub
+# (Settings -> Environments -> production -> Deployment branches) — see
+# docs/infrastructure/web-deploy.md.
 data "aws_iam_policy_document" "github_actions_trust" {
   statement {
     effect  = "Allow"
@@ -37,7 +42,7 @@ data "aws_iam_policy_document" "github_actions_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:ref:refs/heads/main"]
+      values   = ["repo:${var.github_repository}:environment:production"]
     }
   }
 }
