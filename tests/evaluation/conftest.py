@@ -1,5 +1,5 @@
 """Structured per-question result capture for the golden-question suite -- feeds
-scripts/generate_eval_report.py. See docs/decisions/0004-golden-question-report-and-pages.md.
+scripts/eval/generate_eval_report.py. See docs/decisions/0004-golden-question-report-and-pages.md.
 
 Writes one JSON file (EVAL_RESULTS_PATH, default eval-results.json) at the end of the test
 session: {"run_metadata": {...}, "results": [...]}. Tests populate the `eval_result` fixture's

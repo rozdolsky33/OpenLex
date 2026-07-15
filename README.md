@@ -163,7 +163,7 @@ OpenLex talks to three external things. Two shape the **data**; one is the **LLM
 
 **Why statutes are fetched live but cases are seeded:** statute text is cleanly available from
 a free public API, so the worker pulls it on demand and can re-check freshness
-(`scripts/check_statute_freshness.py`). Case-law full text is not automatable, so it's a
+(`scripts/eval/check_statute_freshness.py`). Case-law full text is not automatable, so it's a
 hand-curated seed of **five** real NY landlord-tenant decisions — e.g. Park West Management
 v. Mitchell (warranty of habitability), Regina Metropolitan v. NYS DHCR (rent-overcharge), and
 Mallory Associates v. Barving Realty (security deposits as trust funds), plus Chinatown
@@ -172,7 +172,7 @@ Apartments v. Chu Cho Lam and ATM One v. Landaverde.
 > **Other tokens you may see in `.env.example`** — `COURTLISTENER_API_TOKEN`, `GHCR_USERNAME`,
 > and `GHCR_PAT` are **bootstrap/curation-only** and are *not* wired into application config
 > (`openlex_shared.config.Settings`). GHCR credentials are used once by
-> `scripts/kind-ghcr-pull-secret-bootstrap.sh` to let a kind cluster pull private images.
+> `scripts/kind/ghcr-pull-secret-bootstrap.sh` to let a kind cluster pull private images.
 
 ---
 
@@ -230,7 +230,7 @@ The fast, native inner loop. Brings up Postgres, the API, the worker, the web UI
 **local observability stack** (OpenTelemetry Collector, Jaeger, Prometheus, Grafana).
 
 ```bash
-scripts/bootstrap.sh          # creates .env, uv sync, docker compose up --build
+scripts/compose/bootstrap.sh          # creates .env, uv sync, docker compose up --build
 # or manually:
 cp .env.example .env          # then set ANTHROPIC_API_KEY, NY_OPEN_LEG_API_KEY, JWT_SECRET_KEY
 uv sync --all-packages
@@ -240,8 +240,8 @@ docker compose up --build
 Once the containers are healthy, load the corpus and seed the demo logins:
 
 ```bash
-scripts/ingest.sh all         # runs the worker's ingestion (statutes + cases)
-scripts/seed-demo-users.sh    # creates the three tier-gated demo accounts
+scripts/compose/ingest.sh all         # runs the worker's ingestion (statutes + cases)
+scripts/seed/seed-demo-users.sh    # creates the three tier-gated demo accounts
 ```
 
 | Service | URL |
@@ -262,12 +262,12 @@ for staging-realistic testing, not everyday coding — it needs more tooling and
 resources than Compose.
 
 ```bash
-scripts/kind-up.sh                          # create the `openlex` kind cluster
-scripts/kind-ghcr-pull-secret-bootstrap.sh  # one-time: let the cluster pull private images
-scripts/kind-secrets-bootstrap.sh           # one-time: seed app secrets into the cluster
-scripts/argocd-bootstrap.sh kind            # install ArgoCD + point it at the kind overlay
-scripts/app-port-forward.sh                 # reach the app locally
-scripts/observability-port-forward.sh       # reach Grafana/Jaeger/ArgoCD/etc.
+scripts/kind/up.sh                          # create the `openlex` kind cluster
+scripts/kind/ghcr-pull-secret-bootstrap.sh  # one-time: let the cluster pull private images
+scripts/kind/secrets-bootstrap.sh           # one-time: seed app secrets into the cluster
+scripts/kind/argocd-bootstrap.sh kind            # install ArgoCD + point it at the kind overlay
+scripts/kind/app-port-forward.sh                 # reach the app locally
+scripts/kind/observability-port-forward.sh       # reach Grafana/Jaeger/ArgoCD/etc.
 ```
 
 kind has no ingress, so everything is reached over `kubectl port-forward` (the two scripts
@@ -290,7 +290,7 @@ From here it's **GitOps**: a merge to `develop` triggers `.github/workflows/depl
 builds multi-arch images to GHCR, bumps the image tags in `infra/kubernetes/overlays/kind/`,
 and commits — ArgoCD then reconciles that onto the cluster. See
 [`docs/infrastructure/kubernetes-topology.md`](docs/infrastructure/kubernetes-topology.md).
-Tear down with `scripts/kind-down.sh`.
+Tear down with `scripts/kind/down.sh`.
 
 ### 3. AWS EKS — production demo
 
@@ -316,7 +316,7 @@ terraform init -backend-config=backend.hcl
 terraform apply
 # then: wire outputs into the eks-demo manifests, populate Secrets Manager, and:
 aws eks update-kubeconfig --name <cluster_name> --region <region>
-scripts/argocd-bootstrap.sh eks-demo
+scripts/kind/argocd-bootstrap.sh eks-demo
 ```
 
 The full first-time runbook (remote state bootstrap, secret population, DNS delegation, the
@@ -366,9 +366,9 @@ See [`docs/`](docs/) for architecture documentation and decision records (ADRs).
 uv run pytest                                  # unit tests (root pyproject sets testpaths)
 uv run ruff check . && uv run ruff format .    # lint + format
 uv run mypy apps packages                      # typecheck
-scripts/test-db.sh up                          # start db-test (pgvector on :5544) for integration tests
+scripts/test/test-db.sh up                          # start db-test (pgvector on :5544) for integration tests
 uv run pytest tests/integration                # real-DB integration tests
-scripts/evaluate.sh                            # golden-question legal-accuracy eval (guarded; real API)
+scripts/eval/evaluate.sh                            # golden-question legal-accuracy eval (guarded; real API)
 ```
 
 The `verify` skill runs the project's full gate (lint, types, unit, and real-DB integration

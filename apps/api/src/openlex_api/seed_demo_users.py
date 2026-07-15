@@ -1,10 +1,10 @@
 """Seed/refresh the three fixed demo users (Silver/Gold/Platinum) for the tier-quota demo.
 
-Idempotent: upserts by email each run, so `scripts/seed-demo-users.sh` can be rerun to reset a
+Idempotent: upserts by email each run, so `scripts/seed/seed-demo-users.sh` can be rerun to reset a
 user's password/tier and zero their quota window for a fresh demo, without a full DB wipe.
 
 Registration is disabled for this demo (see routers/auth.py) -- these three seeded users are
-the only accounts that can log in. Run via `scripts/seed-demo-users.sh`.
+the only accounts that can log in. Run via `scripts/seed/seed-demo-users.sh`.
 """
 
 import asyncio

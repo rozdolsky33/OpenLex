@@ -14,6 +14,6 @@ async def ingest(req: IngestRequest) -> None:
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail=(
             "Ingestion runs in the worker container, not via the API. Trigger it with "
-            "scripts/ingest.sh (docker compose exec worker ...)."
+            "scripts/compose/ingest.sh (docker compose exec worker ...)."
         ),
     )

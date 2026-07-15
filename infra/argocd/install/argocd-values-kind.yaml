@@ -1,5 +1,5 @@
 # Helm values for `helm upgrade --install argocd argo/argo-cd -n argocd -f this-file`
-# (see scripts/argocd-bootstrap.sh). Minimal footprint for a laptop kind cluster; ArgoCD keeps
+# (see scripts/kind/argocd-bootstrap.sh). Minimal footprint for a laptop kind cluster; ArgoCD keeps
 # its own default TLS (accessed via `kubectl port-forward`, no ingress/cert-manager in kind).
 configs:
   cm:

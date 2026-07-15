@@ -88,7 +88,7 @@
       "gridPos": { "h": 4, "w": 24, "x": 0, "y": 30 },
       "options": {
         "mode": "markdown",
-        "content": "Tempo and Jaeger receive the **identical trace** from the OTel Collector's dual export -- copy any `trace_id` from the tables above (or from an `X-Trace-Id` response header) and paste it into [Jaeger's search-by-trace-ID](http://localhost:16686/search) (after running `scripts/observability-port-forward.sh`) to open the same trace there."
+        "content": "Tempo and Jaeger receive the **identical trace** from the OTel Collector's dual export -- copy any `trace_id` from the tables above (or from an `X-Trace-Id` response header) and paste it into [Jaeger's search-by-trace-ID](http://localhost:16686/search) (after running `scripts/kind/observability-port-forward.sh`) to open the same trace there."
       }
     }
   ]

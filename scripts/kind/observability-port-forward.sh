@@ -3,7 +3,7 @@
 # infra/kubernetes/README.md), so this replaces juggling six separate `kubectl
 # port-forward` terminals. Ctrl-C kills all of them (trap below).
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 NAMESPACE="observability"
 ARGOCD_NAMESPACE="argocd"
@@ -29,7 +29,7 @@ pids+=($!)
 kubectl port-forward -n "${NAMESPACE}" svc/jaeger 16686:16686 &
 pids+=($!)
 # argocd-server serves both the UI and gRPC API over the same HTTPS port -- see
-# scripts/argocd-bootstrap.sh's own port-forward instructions, unified here so it's one
+# scripts/kind/argocd-bootstrap.sh's own port-forward instructions, unified here so it's one
 # command instead of a separate terminal.
 kubectl port-forward -n "${ARGOCD_NAMESPACE}" svc/argocd-server 8080:443 &
 pids+=($!)

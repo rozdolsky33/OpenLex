@@ -1,6 +1,6 @@
 # Local pre-merge gate, belt-and-suspenders with .claude/hooks/format-python.sh (which only
 # runs for edits Claude Code itself makes) and .github/workflows/*.yml (which only catches
-# problems after a push). Install with `pre-commit install` (scripts/bootstrap.sh does this
+# problems after a push). Install with `pre-commit install` (scripts/compose/bootstrap.sh does this
 # automatically); run on demand with `pre-commit run --all-files`.
 #
 # ruff-check/ruff-format run with --fix / in-place here (auto-fix, matching the Claude Code

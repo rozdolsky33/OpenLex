@@ -13,7 +13,7 @@
 # for the matching nodeSelector/tolerations on the observability side.
 #
 # IMPORTANT: kind can't add nodes to a running cluster — changing this file requires
-# `kind delete cluster --name openlex && scripts/kind-up.sh` (destructive: wipes all
+# `kind delete cluster --name openlex && scripts/kind/up.sh` (destructive: wipes all
 # workloads, including Postgres data). Applying this is a deliberate, separate step (Task 7),
 # not automatic on commit.
 #

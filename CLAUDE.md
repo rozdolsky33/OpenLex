@@ -74,7 +74,7 @@ generation design). What's built:
   into multiple paragraph-packed chunks instead, since opinions run far longer than statute
   sections (see ADR-0006).
 - `apps/worker/src/openlex_worker/__main__.py` + `cli.py` implement
-  `python -m openlex_worker ingest --source {statutes|cases|all}`, so `scripts/ingest.sh` now
+  `python -m openlex_worker ingest --source {statutes|cases|all}`, so `scripts/compose/ingest.sh` now
   runs for real for both sources. `pipelines/normalization/{statutes,cases}.py` and
   `pipelines/indexing/{statutes,cases}.py` (sharing a common write path in
   `pipelines/indexing/_shared.py`) do the normalize→chunk→embed→upsert work, respecting
@@ -89,12 +89,12 @@ generation design). What's built:
   single-conversation, citations + disclaimer displayed per answer) — see ADR-0003.
 - `tests/integration/` now has real tests (`test_indexing.py`, `test_indexing_cases.py`,
   `test_normalization.py`, `test_normalization_cases.py`, `test_search.py`) against a real
-  Postgres+pgvector — see `scripts/test-db.sh` and `tests/integration/README.md` for how to
+  Postgres+pgvector — see `scripts/test/test-db.sh` and `tests/integration/README.md` for how to
   run them.
 - `tests/evaluation/golden_questions.yaml` + `test_golden_questions.py` now exist: a
   parametrized, real-API golden-question suite marked `evaluation` and excluded from the
   default `uv run pytest` run (real Anthropic calls, needs a running server — see
-  `tests/evaluation/README.md`). `scripts/evaluate.sh` runs it for real now.
+  `tests/evaluation/README.md`). `scripts/eval/evaluate.sh` runs it for real now.
 
 Before assuming a module/endpoint/script exists, check for it — don't rely on the README's or
 this file's description of the target architecture as current fact.
@@ -108,15 +108,15 @@ uv run ruff format .            # format
 uv run mypy apps packages       # typecheck
 uv run pytest                   # run all tests (root pyproject.toml sets testpaths)
 uv run --package openlex-api pytest apps/api/tests   # run one package/app's tests only
-scripts/test-db.sh up            # start db-test (Postgres+pgvector on :5544) for tests/integration
+scripts/test/test-db.sh up            # start db-test (Postgres+pgvector on :5544) for tests/integration
 ```
 
 ```bash
-scripts/bootstrap.sh            # first-time setup: .env, uv sync, docker compose up --build
+scripts/compose/bootstrap.sh            # first-time setup: .env, uv sync, docker compose up --build
 docker compose up --build
-scripts/ingest.sh all           # run ingestion (guarded — see "Current state" above)
-scripts/evaluate.sh             # run the golden-question eval harness (guarded)
-scripts/seed-local-db.sh        # re-apply migrations/postgres/0001_init.sql manually
+scripts/compose/ingest.sh all           # run ingestion (guarded — see "Current state" above)
+scripts/eval/evaluate.sh             # run the golden-question eval harness (guarded)
+scripts/compose/seed-local-db.sh        # re-apply migrations/postgres/0001_init.sql manually
 ```
 
 - API: http://localhost:8000 (docs at `/docs`)

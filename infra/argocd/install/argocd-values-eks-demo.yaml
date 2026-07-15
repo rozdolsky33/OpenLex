@@ -1,5 +1,5 @@
 # Helm values for `helm upgrade --install argocd argo/argo-cd -n argocd -f this-file`
-# (see scripts/argocd-bootstrap.sh). Sized conservatively — this shares one t4g.medium node
+# (see scripts/kind/argocd-bootstrap.sh). Sized conservatively — this shares one t4g.medium node
 # with ingress-nginx, cert-manager, external-dns, external-secrets, and the openlex workload
 # (see docs/infrastructure/aws-eks-cost-estimate.md). TLS terminates at ingress-nginx +
 # cert-manager (infra/argocd/apps/eks-demo/argocd-ingress.yaml), so ArgoCD's own server runs

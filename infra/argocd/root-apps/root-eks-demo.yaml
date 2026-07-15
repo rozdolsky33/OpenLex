@@ -1,4 +1,4 @@
-# The one Application a human applies by hand for eks-demo (via scripts/argocd-bootstrap.sh eks-demo):
+# The one Application a human applies by hand for eks-demo (via scripts/kind/argocd-bootstrap.sh eks-demo):
 # `kubectl apply -f infra/argocd/projects/appproject-eks-demo.yaml -f infra/argocd/root-apps/root-eks-demo.yaml`
 # Everything else in infra/argocd/apps/eks-demo/ is then reconciled automatically, in sync-wave
 # order (platform controllers -> ingress-nginx -> cluster-scoped config -> the openlex app).

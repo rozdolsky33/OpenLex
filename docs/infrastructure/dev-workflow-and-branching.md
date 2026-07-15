@@ -78,8 +78,8 @@ actual repo and cluster, not just described from the design.
   free, full trace/metric visibility via the local OTel Collector + Prometheus + Grafana +
   Jaeger, no image push/pull round-trip.
 - **Want to see it in the GitOps-realistic environment without waiting on CI:**
-  `scripts/kind-load-images.sh` (build + `kind load docker-image`, unchanged, still instant)
-  then `scripts/use-local-images.sh` to point the kind overlay at those local tags —
+  `scripts/kind/load-images.sh` (build + `kind load docker-image`, unchanged, still instant)
+  then `scripts/kind/use-local-images.sh` to point the kind overlay at those local tags —
   deliberately **never committed**; `git checkout -- infra/kubernetes/overlays/kind/kustomization.yaml`
   reverts it.
 - **Shipping something real:** open a PR against `develop`, not `main`. CI runs `api.yml`/
@@ -127,7 +127,7 @@ real, separate cluster with real, separate architecture — which is the entire 
 - **Build time**: multi-arch builds are meaningfully slower than single-arch — the QEMU leg of
   the api/worker builds (heavy Python deps: torch, sentence-transformers) took the bulk of a
   ~6.5-minute total run, live-measured. Single-arch would be roughly half that.
-- **A manual, local-only credential bootstrap step** (`scripts/kind-ghcr-pull-secret-bootstrap.sh`)
+- **A manual, local-only credential bootstrap step** (`scripts/kind/ghcr-pull-secret-bootstrap.sh`)
   is required once per machine before the kind cluster can pull the now-private GHCR images —
   one more thing a new contributor has to know about and do.
 - **Two branches to keep straight**: `develop` vs `main`, with `main`'s actual promotion

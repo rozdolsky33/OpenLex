@@ -43,7 +43,7 @@ Local `kind` needs none of this — it's local-only, no AWS involved.
    after registering a GitHub OAuth App (see
    `infra/argocd/apps/eks-demo/app-oauth2-proxy.yaml`'s header comment for the exact steps).
 6. `aws eks update-kubeconfig --name <cluster_name> --region <region>`, then run
-   `scripts/argocd-bootstrap.sh eks-demo`.
+   `scripts/kind/argocd-bootstrap.sh eks-demo`.
 7. `kubectl patch storageclass gp2 -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'` —
    EKS ships `gp2` as the cluster's default StorageClass out of the box; this repo's `gp3`
    StorageClass (`infra/kubernetes/overlays/eks-demo/storageclass-gp3.yaml`) needs to be the

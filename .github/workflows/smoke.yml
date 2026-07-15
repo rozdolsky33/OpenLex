@@ -74,11 +74,11 @@ jobs:
 
       - name: Ingest seed statutes
         if: steps.secrets.outputs.configured == 'true'
-        run: scripts/ingest.sh statutes
+        run: scripts/compose/ingest.sh statutes
 
       - name: Seed demo users
         if: steps.secrets.outputs.configured == 'true'
-        run: scripts/seed-demo-users.sh
+        run: scripts/seed/seed-demo-users.sh
 
       - name: Run smoke test
         if: steps.secrets.outputs.configured == 'true'

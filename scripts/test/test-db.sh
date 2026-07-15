@@ -2,9 +2,9 @@
 # Manage the ephemeral db-test docker-compose service that tests/integration runs against
 # (real Postgres+pgvector, matching tests/integration/conftest.py's TEST_DATABASE_URL default
 # of postgresql+asyncpg://openlex_test@127.0.0.1:5544/openlex_test — no env var needed).
-# Usage: scripts/test-db.sh [up|down|reset]
+# Usage: scripts/test/test-db.sh [up|down|reset]
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 CMD="${1:-up}"
 

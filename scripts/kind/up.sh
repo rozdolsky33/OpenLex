@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Idempotent: create the local `openlex` kind cluster if it doesn't already exist.
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 CLUSTER_NAME="openlex"
 

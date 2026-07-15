@@ -25,7 +25,7 @@
 #     scheme, consumed by `apps/api`/`apps/worker` via `openlex_shared.config.Settings`) --
 #     the `+asyncpg` suffix is not a scheme libpq recognizes, so pointing
 #     `config.datasourceSecret` straight at `DATABASE_URL` would fail to connect.
-#     Resolution: `scripts/kind-secrets-bootstrap.sh` now also derives a second key,
+#     Resolution: `scripts/kind/secrets-bootstrap.sh` now also derives a second key,
 #     `POSTGRES_EXPORTER_DSN` (same host/user/password/db, `+asyncpg` stripped,
 #     `sslmode=disable` appended to match Postgres's own no-TLS setup), into the same
 #     `openlex-secrets` Secret -- one extra derived value, not a duplicated credential or a

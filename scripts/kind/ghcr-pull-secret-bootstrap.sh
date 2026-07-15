@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Manual, idempotent GHCR pull-secret bootstrap for the kind cluster -- same category of
-# exception as scripts/kind-secrets-bootstrap.sh (kind has no IRSA/External Secrets Operator to
+# exception as scripts/kind/secrets-bootstrap.sh (kind has no IRSA/External Secrets Operator to
 # automate this). Creates a docker-registry Secret so kubelet can pull the private
 # ghcr.io/<owner>/openlex-{api,worker,web} images deploy.yml publishes. Not committed anywhere;
 # not managed by ArgoCD. Safe to re-run after rotating GHCR_PAT in .env.
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 NAMESPACE="openlex"
 
 if [ ! -f .env ]; then
-  echo "No .env found — run scripts/bootstrap.sh first (or copy .env.example to .env and fill it in)." >&2
+  echo "No .env found — run scripts/compose/bootstrap.sh first (or copy .env.example to .env and fill it in)." >&2
   exit 1
 fi
 
