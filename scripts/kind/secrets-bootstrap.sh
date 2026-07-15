@@ -55,3 +55,22 @@ kubectl create secret generic openlex-secrets \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "openlex-secrets created/updated in namespace '${NAMESPACE}' from .env."
+
+# Stable Grafana admin password. kube-prometheus-stack's Grafana otherwise mints a new random
+# admin-password on every ArgoCD sync (Helm randAlphaNum), which drifts out of sync with the
+# running pod and breaks `admin` login. Pin it via a fixed Secret in the observability
+# namespace, referenced by the kube-prometheus-stack values' grafana.admin.existingSecret.
+# (Anonymous access still works without any login; this is only for editing / full admin.)
+GRAFANA_ADMIN_PASSWORD="$(grep '^GRAFANA_ADMIN_PASSWORD=' .env | cut -d= -f2-)"
+if [ -n "${GRAFANA_ADMIN_PASSWORD}" ]; then
+  kubectl create namespace observability --dry-run=client -o yaml | kubectl apply -f -
+  kubectl create secret generic grafana-admin \
+    --namespace observability \
+    --from-literal=admin-user=admin \
+    --from-literal=admin-password="${GRAFANA_ADMIN_PASSWORD}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  echo "grafana-admin created/updated in namespace 'observability' from .env."
+else
+  echo "GRAFANA_ADMIN_PASSWORD not set in .env -- skipping grafana-admin (Grafana keeps its" \
+    "chart-generated random password; set it to pin the admin login)."
+fi
