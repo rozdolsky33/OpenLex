@@ -352,9 +352,9 @@ tests) before any change is claimed done.
 
 ## CI/CD and legal-accuracy evaluation
 
-📊 **[Visual pipeline diagram](https://claude.ai/code/artifact/e57e1b47-0323-4a09-81c0-fa62b1a910bc)** —
-all ten workflows mapped across their four triggers (PR quality gates, the `main`-merge guard,
-image build + GitOps deploy on `develop`, and static web deploy on `main`).
+📊 **[Published pipeline flow diagram](https://claude.ai/code/artifact/e57e1b47-0323-4a09-81c0-fa62b1a910bc)** —
+all ten GitHub Actions workflows mapped across their four triggers (PR quality gates, the
+`main`-merge guard, image build + GitOps deploy on `develop`, and static web deploy on `main`).
 
 > **Git workflow:** open PRs against `develop`, not `main`. `main` is the production branch;
 > a CI guard (`restrict-main-merges.yml`) blocks any PR to `main` that isn't from `develop`.
@@ -401,6 +401,19 @@ against. See `tests/evaluation/README.md` for how to run the suite locally, and
 [ADR-0004](docs/decisions/0004-golden-question-report-and-pages.md) for the full design
 (why a git-native `gh-pages` history store, why divergence is flagged the way it is, why the
 freshness check runs before any Claude spend).
+
+### Secret scanning &amp; secrets management
+
+Secrets are caught at three layers: **gitleaks** runs in `.pre-commit-config.yaml` (local, before
+a commit leaves the machine), again in the `security.yml` CI job (on every PR), and **GitGuardian**
+scans PRs from the dashboard side. No real credential is ever committed — all runtime secrets come
+from `.env` (local), cluster Secrets (kind), or AWS Secrets Manager via External Secrets (EKS).
+
+CI test jobs (`api` / `pipelines` / `integration`) need a few config values to exist at import
+time (`openlex_shared.config.Settings` has required fields), but their tests never make a real
+Claude call, open a DB connection, or verify a token. Those placeholders are **generated at
+runtime** inside each workflow (`openssl rand` into `$GITHUB_ENV`) rather than hardcoded, so no
+secret-shaped literal is ever written into a workflow file for a scanner to flag.
 
 ---
 

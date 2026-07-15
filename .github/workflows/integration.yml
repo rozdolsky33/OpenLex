@@ -29,19 +29,20 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    # Same dummy values as api.yml/pipelines.yml -- openlex_shared.config.Settings requires
-    # these at import time (database_url is a plain `str` field, not URL-validated, so any
-    # non-empty string satisfies it); tests/integration never actually connects via
-    # DATABASE_URL (it uses TEST_DATABASE_URL, see conftest.py) or makes a real Anthropic
-    # call or reads JWT_SECRET_KEY, so placeholders are correct here. DATABASE_URL is
-    # deliberately not written in user:pass@host URL shape -- that shape trips GitGuardian's
-    # generic-password pattern matcher even though the value is never used to connect.
-    env:
-      ANTHROPIC_API_KEY: ci-placeholder
-      DATABASE_URL: not-a-real-connection-string-see-comment-above
-      JWT_SECRET_KEY: ci-placeholder-not-a-real-secret-32chars
     steps:
       - uses: actions/checkout@v4
+      - name: Generate throwaway CI config
+        # openlex_shared.config.Settings requires these at import time. tests/integration never
+        # connects via DATABASE_URL (it uses TEST_DATABASE_URL, see conftest.py), makes a real
+        # Anthropic call, or reads JWT_SECRET_KEY -- so these are placeholders. Generated at
+        # runtime rather than hardcoded so secret scanners (gitleaks/GitGuardian) never see a
+        # secret-shaped literal in this file.
+        run: |
+          {
+            echo "ANTHROPIC_API_KEY=ci-not-used"
+            echo "DATABASE_URL=postgresql+asyncpg://ci-not-used/ci"
+            echo "JWT_SECRET_KEY=$(openssl rand -hex 32)"
+          } >> "$GITHUB_ENV"
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
