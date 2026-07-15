@@ -1,7 +1,17 @@
 name: smoke
 
 on:
-  pull_request: {}
+  pull_request:
+    # Skip the full-stack smoke run when a PR only touches docs -- they can't affect the
+    # running app. paths-ignore skips only when *every* changed file matches (a mixed
+    # docs+code PR still runs). smoke is not a required check, so skipping it can't strand a
+    # docs-only PR (unlike the required dependency-audit/secret-scan in security.yml, which
+    # deliberately stay always-on -- fast, and secret-scanning docs is still worthwhile).
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".claude/**"
+      - "LICENSE"
 
 jobs:
   smoke:

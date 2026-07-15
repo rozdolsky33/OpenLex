@@ -35,6 +35,7 @@ actual thing being showcased.
   - [1. Docker Compose (default dev loop)](#1-docker-compose--default-dev-loop)
   - [2. kind (local Kubernetes + GitOps + observability)](#2-kind--local-kubernetes--gitops--observability)
   - [3. AWS EKS (production demo)](#3-aws-eks--production-demo)
+- [Agentic development with Claude Code](#agentic-development-with-claude-code)
 - [Repository layout](#repository-layout)
 - [Testing](#testing)
 - [CI/CD and legal-accuracy evaluation](#cicd-and-legal-accuracy-evaluation)
@@ -224,25 +225,37 @@ cp .env.example .env
 Three environments of increasing realism. **Docker Compose is the recommended day-to-day loop**;
 kind and EKS exist to demonstrate the Kubernetes/GitOps/production story.
 
+> **Two ways to drive the local bring-up:**
+> 1. **Run the scripts yourself** — a single master per environment takes `up`/`down`:
+>    `scripts/compose-master.sh up` / `scripts/kind-master.sh up` (details below).
+> 2. **Let Claude Code drive it** — this repo ships a `local-environment` skill and a
+>    `/bringup [compose|kind] [up|down]` command, so you can just run `/bringup kind up` (or
+>    ask Claude to "bring up the kind environment"). Claude runs the same master scripts and
+>    uses a built-in symptom→fix matrix to troubleshoot (empty-corpus abstain, unseeded-user
+>    401, stale Grafana port-forward, etc.). See `.claude/skills/local-environment/`.
+
 ### 1. Docker Compose — default dev loop
 
 The fast, native inner loop. Brings up Postgres, the API, the worker, the web UI, and a full
 **local observability stack** (OpenTelemetry Collector, Jaeger, Prometheus, Grafana).
 
+**One command** — bootstrap the stack, wait for the API, ingest the corpus, seed demo users:
+
 ```bash
-scripts/compose/bootstrap.sh          # creates .env, uv sync, docker compose up --build
-# or manually:
 cp .env.example .env          # then set ANTHROPIC_API_KEY, NY_OPEN_LEG_API_KEY, JWT_SECRET_KEY
-uv sync --all-packages
-docker compose up --build
+scripts/compose-master.sh up  # bootstrap -> health-wait -> ingest -> seed users
+# ...and to tear it all down (stack + volumes):
+scripts/compose-master.sh down
 ```
 
-Once the containers are healthy, load the corpus and seed the demo logins:
+<details><summary>…or run the steps individually</summary>
 
 ```bash
-scripts/compose/ingest.sh all         # runs the worker's ingestion (statutes + cases)
-scripts/seed/seed-demo-users.sh    # creates the three tier-gated demo accounts
+scripts/compose/bootstrap.sh   # creates .env, uv sync, docker compose up --build
+scripts/compose/ingest.sh all  # ingest statutes + cases
+scripts/seed/seed-demo-users.sh # create the three tier-gated demo accounts
 ```
+</details>
 
 | Service | URL |
 |---------|-----|
@@ -261,22 +274,36 @@ full observability stack (kube-prometheus-stack, Grafana, Tempo, Jaeger, Loki, P
 for staging-realistic testing, not everyday coding — it needs more tooling and machine
 resources than Compose.
 
-```bash
-# --- cluster + platform bring-up ---
-scripts/kind/up.sh                          # create the `openlex` kind cluster
-scripts/kind/ghcr-pull-secret-bootstrap.sh  # one-time: let the cluster pull private images
-scripts/kind/secrets-bootstrap.sh           # one-time: app secrets from .env -> openlex-secrets
-scripts/kind/argocd-bootstrap.sh kind       # install ArgoCD + point it at the kind overlay
+**One command** — create the cluster, bootstrap secrets, install ArgoCD, wait for the app to
+roll out, then ingest + seed:
 
-# --- wait for the app pods to come up (ArgoCD syncs them), then load data ---
+```bash
+scripts/kind-master.sh up   # cluster -> ghcr secret -> secrets -> argocd -> wait -> ingest -> seed
+# ...and to tear the cluster down:
+scripts/kind-master.sh down
+```
+
+Then open access in separate terminals (these block on `kubectl port-forward`):
+
+```bash
+scripts/kind/app-port-forward.sh            # Web UI :5173, API :8000
+scripts/kind/observability-port-forward.sh  # Grafana :3000, ArgoCD :8080, Jaeger :16686
+```
+
+<details><summary>…or run the bring-up steps individually</summary>
+
+```bash
+# cluster + platform
+scripts/kind/up.sh                          # create the `openlex` kind cluster
+scripts/kind/ghcr-pull-secret-bootstrap.sh  # let the cluster pull private GHCR images
+scripts/kind/secrets-bootstrap.sh           # app secrets from .env -> openlex-secrets
+scripts/kind/argocd-bootstrap.sh kind       # install ArgoCD + point it at the kind overlay
+# wait for the app pods (ArgoCD syncs them), then load data
 kubectl -n openlex rollout status deploy/openlex-api deploy/openlex-worker
 scripts/seed/kind-ingest.sh                 # ingest statutes + cases into the cluster DB
 scripts/seed/kind-seed-demo-users.sh        # create the tier-gated demo logins
-
-# --- access ---
-scripts/kind/app-port-forward.sh            # reach the web UI + API locally
-scripts/kind/observability-port-forward.sh  # reach Grafana/Jaeger/ArgoCD/etc.
 ```
+</details>
 
 > **Fresh-cluster data steps are required, not optional.** kind starts with an empty database:
 > until `kind-ingest.sh` runs, `/query` hard-abstains ("NO CONFIDENT ANSWER FOUND") because
@@ -351,6 +378,65 @@ resources than docker-compose does. See
 what it needs and why, and
 [`docs/infrastructure/dev-workflow-and-branching.md`](docs/infrastructure/dev-workflow-and-branching.md)
 for how the two fit together with CI/CD.
+
+## Agentic development with Claude Code
+
+This repo ships project context for [Claude Code](https://claude.com/claude-code) so an agent
+can drive routine operations — bringing environments up/down, ingesting, seeding, and
+troubleshooting — instead of you running each script by hand. It's all plain files under
+`.claude/` and `CLAUDE.md`; nothing to install.
+
+### Setup
+
+1. Install Claude Code and open it in the repo root (`claude` in the terminal, or the IDE
+   extension). It reads `CLAUDE.md` (project overview, conventions, commands) automatically.
+2. Have your `.env` filled in (same keys as the manual flow — see [Configuration](#configuration)).
+   The agent will prompt you if a required key is missing.
+3. That's it — the skills, commands, and agents below are discovered from `.claude/`
+   automatically. No separate config.
+
+### What's available
+
+**Slash commands** (`.claude/commands/`) — type these in Claude Code:
+
+| Command | What it does |
+|---------|--------------|
+| `/bringup [compose\|kind] [up\|down]` | Drives a whole local environment end-to-end, and troubleshoots if a step fails (via the `local-environment` skill). |
+| `/adr` | Scaffolds a new Architecture Decision Record in `docs/decisions/`. |
+
+**Skills** (`.claude/skills/`) — the agent loads these automatically when relevant:
+
+| Skill | When it applies |
+|-------|-----------------|
+| `local-environment` | Bring up / tear down / **troubleshoot** the compose + kind stacks. Encodes the fresh-cluster failure modes (empty-corpus abstain, unseeded-user 401, postgres-exporter secret, stale Grafana port-forward) as a symptom→fix matrix. |
+| `verify` | The concrete verification gate (lint, types, unit + real-DB integration tests) — run before claiming a change is done. |
+| `openlex-data-model` | Reading/writing the `documents`/`chunks` schema and hybrid retrieval. |
+| `ny-open-legislation-api` | Fetching statute text / adding seed data / debugging ingestion. |
+| `grounded-answer-contract` | Changing the Claude-based answer endpoint while keeping the answer-only-from-context + citation + disclaimer guarantees. |
+
+**Subagents** (`.claude/agents/`) — `backend-implementer` (FastAPI routers / retrieval /
+generation) and `data-ingestion` (statute + case-law pipeline).
+
+### How to run it
+
+Two equivalent ways to bring up an environment:
+
+```text
+# In Claude Code, run the command:
+/bringup kind up
+
+# ...or just ask in plain language:
+"bring up the kind environment and make sure the chat works"
+```
+
+The agent runs the same master scripts (`scripts/kind-master.sh` / `scripts/compose-master.sh`),
+watches the colored step output, and — if the app misbehaves — diagnoses it server-side and
+applies the documented fix, then tells you which port-forwards to start. Tear down the same
+way: `/bringup kind down` (it confirms first, since that deletes the cluster).
+
+Everything the agent does here you can also do manually — see
+[Running it — three ways](#running-it--three-ways). The agentic path just packages the
+sequence and the hard-won troubleshooting knowledge so you don't have to remember it.
 
 ## Repository layout
 
