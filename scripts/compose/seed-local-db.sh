@@ -5,7 +5,7 @@
 # full volume reset). Applies every migrations/postgres/*.sql file in sorted (numeric prefix)
 # order, same as docker-entrypoint-initdb.d does on first boot.
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 for migration in migrations/postgres/*.sql; do
   echo "Applying $migration..."

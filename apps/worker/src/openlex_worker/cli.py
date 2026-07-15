@@ -1,5 +1,5 @@
 """Ingestion CLI: `python -m openlex_worker ingest --source {statutes|cases|all}` (see
-scripts/ingest.sh). No CLI framework is a dependency anywhere in this repo -- stdlib
+scripts/compose/ingest.sh). No CLI framework is a dependency anywhere in this repo -- stdlib
 argparse is enough for one subcommand and two flags.
 """
 

@@ -1,12 +1,12 @@
 """Builds the golden-question evaluation report (site/index.html) from this run's collected
 JSON results plus historical run data. See docs/decisions/0004-golden-question-report-and-pages.md.
 
-Usage: uv run python scripts/generate_eval_report.py
+Usage: uv run python scripts/eval/generate_eval_report.py
 Reads (all optional except at least one of results-haiku.json/results-sonnet.json should
 exist for a meaningful report; missing inputs render as an explicit "unavailable" state rather
 than failing):
     results-haiku.json, results-sonnet.json  -- from tests/evaluation/conftest.py
-    freshness-results.json                   -- from scripts/check_statute_freshness.py
+    freshness-results.json                   -- from scripts/eval/check_statute_freshness.py
     history.ndjson                           -- prior runs' summaries, absent on the first run
 Writes: site/index.html, site/history.ndjson
 """

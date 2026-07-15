@@ -19,7 +19,7 @@ apps/
 
 ## Bootstrap sequence
 
-Both environments: `scripts/argocd-bootstrap.sh <kind|eks-demo>` — Helm-installs ArgoCD, then
+Both environments: `scripts/kind/argocd-bootstrap.sh <kind|eks-demo>` — Helm-installs ArgoCD, then
 applies that environment's AppProject and root Application. Everything under
 `infra/argocd/apps/<env>/` then reconciles automatically.
 

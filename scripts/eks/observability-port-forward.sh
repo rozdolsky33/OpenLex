@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# scripts/eks-demo-observability-port-forward.sh
+# scripts/eks/observability-port-forward.sh
 #
 # Prometheus and Jaeger have no built-in authentication and get no Ingress on eks-demo (see
 # infra/argocd/apps/eks-demo/ingress-grafana.yaml's header comment and the design spec's
 # revised 7.9) -- this is their only access path, mirroring
-# scripts/observability-port-forward.sh's existing pattern for kind service-for-service. A
+# scripts/kind/observability-port-forward.sh's existing pattern for kind service-for-service. A
 # brand-new file, not an extension of that script -- 7.3's isolation discipline means
 # kind-only files never gain eks-demo-specific logic. Requires a kubeconfig context already
 # pointed at the eks-demo cluster (`aws eks update-kubeconfig --name <cluster_name> --region

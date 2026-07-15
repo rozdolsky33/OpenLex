@@ -6,12 +6,12 @@
 # know which mechanism populated it. Not committed anywhere; not managed by ArgoCD. Idempotent
 # (safe to re-run after editing .env).
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 NAMESPACE="openlex"
 
 if [ ! -f .env ]; then
-  echo "No .env found — run scripts/bootstrap.sh first (or copy .env.example to .env and fill it in)." >&2
+  echo "No .env found — run scripts/compose/bootstrap.sh first (or copy .env.example to .env and fill it in)." >&2
   exit 1
 fi
 
@@ -45,7 +45,12 @@ kubectl create secret generic openlex-secrets \
   --namespace "${NAMESPACE}" \
   --from-env-file=<(
     sed -E 's#(DATABASE_URL=.*@)db(:[0-9]+/)#\1postgres\2#' .env
-    echo "POSTGRES_EXPORTER_DSN=${POSTGRES_EXPORTER_DSN}"
+    # Leading \n: if .env has no trailing newline, this derived key would otherwise be
+    # concatenated onto .env's last line (kubectl would then read GHCR_PAT=<pat>POSTGRES_...
+    # as one key and POSTGRES_EXPORTER_DSN would never exist -- observed live on a fresh
+    # cluster). The extra blank line when .env *does* end in a newline is ignored by
+    # --from-env-file.
+    printf '\nPOSTGRES_EXPORTER_DSN=%s\n' "${POSTGRES_EXPORTER_DSN}"
   ) \
   --dry-run=client -o yaml | kubectl apply -f -
 

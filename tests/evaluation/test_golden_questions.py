@@ -4,7 +4,7 @@ Hits a live, already-running API to check the retrieval+generation pipeline's re
 behavior -- not just code correctness -- against a fixed set of landlord-tenant questions.
 Marked `evaluation` and excluded from the default `uv run pytest` run (see the root
 pyproject.toml's addopts): it costs real Anthropic API calls and requires a running server.
-Run via `scripts/evaluate.sh` instead.
+Run via `scripts/eval/evaluate.sh` instead.
 """
 
 import os
@@ -61,7 +61,7 @@ def _auth_token(_require_live_api: None) -> str:
     """POST /query requires a bearer token (see apps/api/src/openlex_api/auth.py).
     POST /auth/register is disabled for this demo (see routers/auth.py) -- only the three
     seeded tier users can log in (apps/api/src/openlex_api/seed_demo_users.py /
-    scripts/seed-demo-users.sh must have already been run against the target API). Logs in as
+    scripts/seed/seed-demo-users.sh must have already been run against the target API). Logs in as
     the seeded Platinum user: the golden-question set (21 cases as of this writing) plus room
     for repeat local runs within the same 4h window needs the highest per-tier quota, not
     Silver/Gold's much tighter limits (see apps/api/src/openlex_api/quota.py)."""
@@ -70,7 +70,7 @@ def _auth_token(_require_live_api: None) -> str:
     if not email or not password:
         pytest.fail(
             "DEMO_PLATINUM_EMAIL/DEMO_PLATINUM_PASSWORD aren't set -- seed the demo users "
-            "(scripts/seed-demo-users.sh) and ensure .env has them before running the eval "
+            "(scripts/seed/seed-demo-users.sh) and ensure .env has them before running the eval "
             "harness."
         )
 

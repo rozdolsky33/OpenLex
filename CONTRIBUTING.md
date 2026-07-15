@@ -7,10 +7,10 @@ resets — for future-you and for any Claude Code session picking the project up
 ## Local dev loop
 
 ```bash
-scripts/bootstrap.sh              # first-time setup: .env, uv sync, docker compose up
+scripts/compose/bootstrap.sh              # first-time setup: .env, uv sync, docker compose up
 
 # working on retrieval / ingestion / migrations / ORM models?
-scripts/test-db.sh up             # start the ephemeral db-test Postgres+pgvector (:5544)
+scripts/test/test-db.sh up             # start the ephemeral db-test Postgres+pgvector (:5544)
 
 # ... edit ...
 
@@ -23,7 +23,7 @@ uv run pytest -m "not evaluation"
 
 Claude Code sessions in this repo auto-run `ruff format`/`ruff check --fix` on edited `.py`
 files via the `PostToolUse` hook in `.claude/settings.json` — but that only fixes files Claude
-edits, not manual edits or edits from other tools. `scripts/bootstrap.sh` also installs a git
+edits, not manual edits or edits from other tools. `scripts/compose/bootstrap.sh` also installs a git
 pre-commit hook (`.pre-commit-config.yaml`, via `pre-commit install`) that runs the same
 ruff/mypy checks plus a gitleaks secret scan on every commit, regardless of what edited the
 files — run `pre-commit run --all-files` manually if you skipped bootstrap or need to re-check
@@ -35,13 +35,13 @@ layers exist (they cover different edit paths, not the same one twice).
 - [ ] `uv run ruff check .` && `uv run ruff format --check .`
 - [ ] `uv run mypy apps packages`
 - [ ] `uv run pytest -m "not evaluation"`
-- [ ] `uv run pytest tests/integration -v` (with `scripts/test-db.sh up`) if you touched
+- [ ] `uv run pytest tests/integration -v` (with `scripts/test/test-db.sh up`) if you touched
       `packages/legal_retrieval`, `pipelines/`, `migrations/`, or ORM models in
       `packages/legal_models`
 - [ ] A new ADR in `docs/decisions/` (or `/adr` in Claude Code) if this is an architectural
       decision, not just an implementation detail
 
-Do **not** run `scripts/evaluate.sh` (the golden-question legal-accuracy suite) as part of
+Do **not** run `scripts/eval/evaluate.sh` (the golden-question legal-accuracy suite) as part of
 routine verification — it makes real Anthropic API calls and costs money. It runs
 automatically in CI on relevant PRs (`evaluation.yml`) and via manual dispatch.
 

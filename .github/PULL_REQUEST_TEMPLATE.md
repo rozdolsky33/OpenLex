@@ -8,7 +8,7 @@
 - [ ] `mypy apps packages` passes
 - [ ] `pytest -m "not evaluation"` passes
 - [ ] `tests/integration` passes (if this touches retrieval, ingestion, migrations, or ORM
-      models — run `scripts/test-db.sh up` first)
+      models — run `scripts/test/test-db.sh up` first)
 - [ ] Added/updated an ADR in `docs/decisions/` if this is an architectural decision
 
 ## CI workflows expected to run

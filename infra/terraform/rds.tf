@@ -85,7 +85,7 @@ resource "aws_secretsmanager_secret" "app" {
 # aws_db_instance.openlex is itself a rare, deliberate, manually-supervised event, not
 # something that happens silently.
 #
-# POSTGRES_EXPORTER_DSN mirrors scripts/kind-secrets-bootstrap.sh's existing derivation for
+# POSTGRES_EXPORTER_DSN mirrors scripts/kind/secrets-bootstrap.sh's existing derivation for
 # the same purpose (Task 9, 7.6 revised: prometheus-postgres-exporter's `config.datasourceSecret`
 # needs a plain libpq DSN, not SQLAlchemy's `+asyncpg` scheme DATABASE_URL uses) -- adjusted to
 # `sslmode=require` since RDS, unlike kind's local Postgres, supports real TLS.

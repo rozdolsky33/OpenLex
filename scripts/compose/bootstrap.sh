@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # First-time local setup: copy .env, sync the uv workspace, and bring up the docker stack.
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 if [ ! -f .env ]; then
   cp .env.example .env

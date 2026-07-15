@@ -1,5 +1,5 @@
 # Golden-question legal-accuracy regression suite. Each question is sent to a live, running
-# API's POST /query (see scripts/evaluate.sh); passing means the retrieval+generation pipeline
+# API's POST /query (see scripts/eval/evaluate.sh); passing means the retrieval+generation pipeline
 # still grounds each answer in the expected statute citation, or still abstains where it should.
 #
 # Fields:

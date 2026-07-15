@@ -49,7 +49,7 @@ same-node anti-affinity that proves nothing.
 
 **Config:** `infra/kubernetes/kind/kind-config.yaml`. kind can't add nodes to a running
 cluster — changing this file requires `kind delete cluster --name openlex &&
-scripts/kind-up.sh` (destructive: wipes all workloads, including Postgres data), a deliberate,
+scripts/kind/up.sh` (destructive: wipes all workloads, including Postgres data), a deliberate,
 separate step, never automatic on commit.
 
 ## Taints, labels, and tolerations
@@ -137,10 +137,10 @@ Beyond the root [`README.md`](../../README.md)'s docker-compose prerequisites, r
 - `kubectl` — cluster interaction
 - [`kustomize`](https://kubectl.docs.kubernetes.io/installation/kustomize/) — the CLI
   (`kubectl kustomize` covers rendering, but `kustomize edit set image` used by
-  `scripts/use-local-images.sh` needs the standalone binary)
-- `helm` — `scripts/argocd-bootstrap.sh` installs ArgoCD itself via `helm upgrade --install`
+  `scripts/kind/use-local-images.sh` needs the standalone binary)
+- `helm` — `scripts/kind/argocd-bootstrap.sh` installs ArgoCD itself via `helm upgrade --install`
   (the one imperative, chicken-and-egg step before ArgoCD can manage everything else)
-- `argocd` CLI — optional, only needed for `scripts/argocd-bootstrap.sh`-adjacent manual
+- `argocd` CLI — optional, only needed for `scripts/kind/argocd-bootstrap.sh`-adjacent manual
   operations; the ArgoCD UI/`kubectl` cover everything else
 
 **Docker Desktop resource allocation** (Settings → Resources): this cluster runs 4 kind nodes
@@ -162,9 +162,9 @@ Loki, OTel Collector, Alertmanager, ArgoCD) plus the application pods (`api` ×2
   Desktop as you can afford, and periodically check `docker system df` / run
   `docker builder prune -f` if builds start failing with "no space left on device."
 
-**Getting started:** `scripts/kind-up.sh` (create the cluster) →
-`scripts/argocd-bootstrap.sh kind` (install ArgoCD + the app-of-apps root) →
-`scripts/kind-secrets-bootstrap.sh` (populate `openlex-secrets` from your local `.env`) →
-`scripts/kind-load-images.sh` (build + load the three application images) — see
+**Getting started:** `scripts/kind/up.sh` (create the cluster) →
+`scripts/kind/argocd-bootstrap.sh kind` (install ArgoCD + the app-of-apps root) →
+`scripts/kind/secrets-bootstrap.sh` (populate `openlex-secrets` from your local `.env`) →
+`scripts/kind/load-images.sh` (build + load the three application images) — see
 [`dev-workflow-and-branching.md`](./dev-workflow-and-branching.md) for the ongoing day-to-day
 loop once the cluster exists.

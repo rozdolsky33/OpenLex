@@ -3,7 +3,7 @@ kind: Kustomization
 
 namespace: openlex
 
-# No ingress/TLS for kind — access via `kubectl port-forward` (scripts/app-port-forward.sh).
+# No ingress/TLS for kind — access via `kubectl port-forward` (scripts/kind/app-port-forward.sh).
 resources:
 - ../../base/postgres
 - ../../base/api
@@ -13,7 +13,7 @@ resources:
 - pdb-openlex-api.yaml
 
 # Images are built + `kind load docker-image`-ed locally (kind can't pull from nowhere) —
-# see scripts/kind-load-images.sh. Tags here must match what was loaded.
+# see scripts/kind/load-images.sh. Tags here must match what was loaded.
 images:
 - name: openlex-api
   newName: ghcr.io/rozdolsky33/openlex-api

@@ -27,12 +27,12 @@ Run this in addition to the fast tier when the change touches `packages/legal_re
 `pipelines/`, `migrations/`, or ORM models in `packages/legal_models`:
 
 ```bash
-scripts/test-db.sh up
+scripts/test/test-db.sh up
 uv run pytest tests/integration -v
 ```
 
 ## Do NOT run as routine verification
 
-`scripts/evaluate.sh` (the `evaluation`-marked golden-question suite) makes real Anthropic API
+`scripts/eval/evaluate.sh` (the `evaluation`-marked golden-question suite) makes real Anthropic API
 calls and costs money. It's a pre-merge/CI-triggered check (see `evaluation.yml`'s path-scoped
 trigger and `tests/evaluation/README.md`), not something to run on every change.

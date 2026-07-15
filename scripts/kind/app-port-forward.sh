@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Port-forwards openlex-web and openlex-api at once, mirroring
-# scripts/observability-port-forward.sh's pattern -- kind has no ingress (see
+# scripts/kind/observability-port-forward.sh's pattern -- kind has no ingress (see
 # infra/kubernetes/README.md), so this is how the web UI (deployed by
-# infra/kubernetes/overlays/kind, loaded via scripts/kind-load-images.sh) becomes reachable
+# infra/kubernetes/overlays/kind, loaded via scripts/kind/load-images.sh) becomes reachable
 # from a developer's own browser. Ctrl-C kills both (trap below).
 #
 # The port numbers are not arbitrary: apps/web's Dockerfile bakes
@@ -10,7 +10,7 @@
 # the browser bundle at dev-server-start, evaluated client-side -- so openlex-api must be
 # forwarded to localhost:8000 for the web UI to actually reach it, not just any local port.
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 NAMESPACE="openlex"
 
