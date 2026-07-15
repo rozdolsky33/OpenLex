@@ -33,7 +33,7 @@ The masters do **not** start port-forwards. After `up`, run:
 
 ```bash
 scripts/kind/app-port-forward.sh            # Web UI :5173, API :8000
-scripts/kind/observability-port-forward.sh  # Grafana :3000 (anon Viewer), ArgoCD :8080, Jaeger :16686
+scripts/kind/observability-port-forward.sh  # Grafana :3000 (anon Editor), ArgoCD :8080, Jaeger :16686
 ```
 
 Always (re)start port-forwards **after** `up` — the app/Grafana pods roll during setup, so any
@@ -73,7 +73,7 @@ asyncio.run(c())"
 # prometheus has app metrics?
 kubectl -n $NS exec deploy/openlex-api -- sh -c "curl -s '$PROM/api/v1/query?query=count(openlex_http_requests_total)'"
 
-# grafana anonymous query works? (200 = anon Viewer OK; 401 = login still required)
+# grafana anonymous query works? (200 = anon OK; 401 = login still required)
 kubectl -n $NS exec deploy/openlex-api -- sh -c \
   "curl -s -o /dev/null -w '%{http_code}\n' '$GF/api/datasources/proxy/uid/prometheus/api/v1/query?query=up'"
 ```

@@ -53,7 +53,7 @@ up() {
   done_banner "docker-compose stack is up and populated."
   info "Web UI : http://localhost:5173"
   info "API    : http://localhost:8000  (docs at /docs)"
-  info "Grafana: http://localhost:3000  (anonymous Viewer)"
+  info "Grafana: http://localhost:3000  (anonymous Editor)"
   info "Log in with the DEMO_* credentials from your .env."
 }
 

@@ -4,11 +4,16 @@ import sys
 import time
 
 from openlex_shared.config import settings
+from openlex_shared.db import engine
 
 from openlex_worker.cli import build_parser, run_ingest
 from openlex_worker.telemetry import setup_telemetry
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+# No logging.basicConfig() here on purpose: setup_telemetry()'s
+# LoggingInstrumentor(set_logging_format=True) owns root-logger config so every line carries
+# trace_id/span_id. basicConfig only configures once, so calling it here would make that a
+# no-op and drop the trace context. setup_telemetry() runs first thing in main(), before any
+# logging happens.
 logger = logging.getLogger("openlex_worker")
 
 HEARTBEAT_INTERVAL_SECONDS = 60
@@ -30,7 +35,7 @@ def main() -> None:
     # next request to trigger BatchSpanProcessor's background export thread, so the
     # TracerProvider returned here must be force-flushed before exit (see the `finally` below)
     # or the last ingestion run's spans are silently lost.
-    provider = setup_telemetry()
+    tracer_provider, meter_provider = setup_telemetry(engine=engine)
     args = build_parser().parse_args()
     exit_code = 0
 
@@ -48,11 +53,13 @@ def main() -> None:
             _heartbeat_loop()
             return
     finally:
-        # A 10s timeout is generous for a handful of spans; if this ever times out in
-        # practice, that's worth investigating, not silently swallowing.
-        flushed = provider.force_flush(timeout_millis=10_000)
-        if not flushed:
-            logger.warning("otel_flush_incomplete: some spans may not have been exported")
+        # One-shot process: force-flush both providers before exit or the last run's spans
+        # and metrics are silently lost (no next request to trigger the background exporters).
+        # 10s is generous for a handful of spans + a few metric points.
+        spans_flushed = tracer_provider.force_flush(timeout_millis=10_000)
+        metrics_flushed = meter_provider.force_flush(timeout_millis=10_000)
+        if not spans_flushed or not metrics_flushed:
+            logger.warning("otel_flush_incomplete: some spans/metrics may not have been exported")
 
     sys.exit(exit_code)
 
