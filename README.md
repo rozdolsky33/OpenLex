@@ -224,6 +224,15 @@ cp .env.example .env
 Three environments of increasing realism. **Docker Compose is the recommended day-to-day loop**;
 kind and EKS exist to demonstrate the Kubernetes/GitOps/production story.
 
+> **Two ways to drive the local bring-up:**
+> 1. **Run the scripts yourself** — a single master per environment takes `up`/`down`:
+>    `scripts/compose-master.sh up` / `scripts/kind-master.sh up` (details below).
+> 2. **Let Claude Code drive it** — this repo ships a `local-environment` skill and a
+>    `/bringup [compose|kind] [up|down]` command, so you can just run `/bringup kind up` (or
+>    ask Claude to "bring up the kind environment"). Claude runs the same master scripts and
+>    uses a built-in symptom→fix matrix to troubleshoot (empty-corpus abstain, unseeded-user
+>    401, stale Grafana port-forward, etc.). See `.claude/skills/local-environment/`.
+
 ### 1. Docker Compose — default dev loop
 
 The fast, native inner loop. Brings up Postgres, the API, the worker, the web UI, and a full
