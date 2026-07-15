@@ -1,8 +1,6 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-
 namespace: openlex
-
 # No ingress/TLS for kind — access via `kubectl port-forward` (scripts/kind/app-port-forward.sh).
 resources:
 - ../../base/postgres
@@ -11,7 +9,6 @@ resources:
 - ../../base/web
 - servicemonitor-openlex-api.yaml
 - pdb-openlex-api.yaml
-
 # Images are built + `kind load docker-image`-ed locally (kind can't pull from nowhere) —
 # see scripts/kind/load-images.sh. Tags here must match what was loaded.
 images:
@@ -24,6 +21,11 @@ images:
 - name: openlex-worker
   newName: ghcr.io/rozdolsky33/openlex-worker
   newTag: 6df2b65eb64c4542421a8a299add2c937bbad33d
-
+- name: ghcr.io/rozdolsky33/openlex-api
+  newTag: 17b2351c584799124d8742edc9469e2cb7fd0792
+- name: ghcr.io/rozdolsky33/openlex-worker
+  newTag: 17b2351c584799124d8742edc9469e2cb7fd0792
+- name: ghcr.io/rozdolsky33/openlex-web
+  newTag: 17b2351c584799124d8742edc9469e2cb7fd0792
 patches:
 - path: patch-resources.yaml
