@@ -41,17 +41,25 @@ POSTGRES_EXPORTER_DSN="$(
     | sed -E 's/^DATABASE_URL=//; s#\+asyncpg##'
 )?sslmode=disable"
 
+# Build the env stream in a temp file rather than a process substitution glued to
+# `--from-env-file=<(...)`: macOS's system bash (3.2) can't parse process substitution in the
+# mid-word `=<(...)` position and fails with "bad substitution: no closing `)'". A temp file is
+# portable across bash versions and equivalent for --from-env-file.
+ENV_FILE="$(mktemp)"
+trap 'rm -f "${ENV_FILE}"' EXIT
+{
+  sed -E 's#(DATABASE_URL=.*@)db(:[0-9]+/)#\1postgres\2#' .env
+  # Leading \n: if .env has no trailing newline, this derived key would otherwise be
+  # concatenated onto .env's last line (kubectl would then read GHCR_PAT=<pat>POSTGRES_...
+  # as one key and POSTGRES_EXPORTER_DSN would never exist -- observed live on a fresh
+  # cluster). The extra blank line when .env *does* end in a newline is ignored by
+  # --from-env-file.
+  printf '\nPOSTGRES_EXPORTER_DSN=%s\n' "${POSTGRES_EXPORTER_DSN}"
+} >"${ENV_FILE}"
+
 kubectl create secret generic openlex-secrets \
   --namespace "${NAMESPACE}" \
-  --from-env-file=<(
-    sed -E 's#(DATABASE_URL=.*@)db(:[0-9]+/)#\1postgres\2#' .env
-    # Leading \n: if .env has no trailing newline, this derived key would otherwise be
-    # concatenated onto .env's last line (kubectl would then read GHCR_PAT=<pat>POSTGRES_...
-    # as one key and POSTGRES_EXPORTER_DSN would never exist -- observed live on a fresh
-    # cluster). The extra blank line when .env *does* end in a newline is ignored by
-    # --from-env-file.
-    printf '\nPOSTGRES_EXPORTER_DSN=%s\n' "${POSTGRES_EXPORTER_DSN}"
-  ) \
+  --from-env-file="${ENV_FILE}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "openlex-secrets created/updated in namespace '${NAMESPACE}' from .env."
@@ -73,4 +81,34 @@ if [ -n "${GRAFANA_ADMIN_PASSWORD}" ]; then
 else
   echo "GRAFANA_ADMIN_PASSWORD not set in .env -- skipping grafana-admin (Grafana keeps its" \
     "chart-generated random password; set it to pin the admin login)."
+fi
+
+# Argo CD Image Updater credentials in the argocd namespace (see
+# infra/argocd/apps/kind/app-argocd-image-updater.yaml): a git write-back PAT so the updater can
+# commit image tags to the gitops/kind branch, and GHCR read creds so it can list image tags.
+# Only created if the tokens are set -- the updater is a kind-only convenience.
+GIT_WRITE_TOKEN="$(grep '^GIT_WRITE_TOKEN=' .env | cut -d= -f2-)"
+GHCR_USERNAME="$(grep '^GHCR_USERNAME=' .env | cut -d= -f2-)"
+GHCR_PAT="$(grep '^GHCR_PAT=' .env | cut -d= -f2-)"
+if [ -n "${GIT_WRITE_TOKEN}" ] && [ -n "${GHCR_USERNAME}" ] && [ -n "${GHCR_PAT}" ]; then
+  kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+  # HTTPS git write-back creds: username + password(PAT with `repo` scope) -- keys per the
+  # Argo CD Image Updater docs. Referenced by app-openlex.yaml's write-back-method annotation.
+  kubectl create secret generic argocd-image-updater-git \
+    --namespace argocd \
+    --from-literal=username="${GHCR_USERNAME}" \
+    --from-literal=password="${GIT_WRITE_TOKEN}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  # GHCR read creds (dockerconfig) so the updater can list openlex-* image tags. Referenced by
+  # app-argocd-image-updater.yaml's registries[].credentials (pullsecret:argocd/ghcr).
+  kubectl create secret docker-registry ghcr \
+    --namespace argocd \
+    --docker-server=ghcr.io \
+    --docker-username="${GHCR_USERNAME}" \
+    --docker-password="${GHCR_PAT}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  echo "argocd-image-updater-git + ghcr secrets created/updated in namespace 'argocd'."
+else
+  echo "GIT_WRITE_TOKEN / GHCR_* not all set in .env -- skipping Argo CD Image Updater secrets" \
+    "(the updater won't be able to read GHCR or write the gitops/kind branch until they are)."
 fi

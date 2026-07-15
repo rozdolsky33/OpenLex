@@ -1,0 +1,48 @@
+# infra/argocd/apps/kind/app-argocd-image-updater.yaml
+#
+# Argo CD Image Updater -- automates image updates so deploy.yml no longer commits image-tag
+# bumps to develop's mainline (which caused non-fast-forward races and blocked develop->main
+# promotions, since the GITHUB_TOKEN bot commit couldn't get CI checks). Instead:
+#
+#   deploy.yml builds + pushes ghcr.io/.../openlex-{api,worker,web}:<sha>  (no git commit)
+#        -> this controller watches GHCR, picks the newest-built image, and git-writes the
+#           kustomize image tags to the `gitops/kind` branch (based on develop, see
+#           app-openlex.yaml's git-branch annotation) -- develop stays code-only.
+#        -> the openlex Application tracks `gitops/kind`, so ArgoCD deploys the new image.
+#
+# Needs two Secrets in the argocd namespace (created by scripts/kind/secrets-bootstrap.sh from
+# .env): `argocd-image-updater-git` (repo-write PAT for the git write-back) and `ghcr` (GHCR
+# read creds so it can list image tags). See infra/argocd/README.md / docs/decisions.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-image-updater
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1" # before the openlex app it feeds
+spec:
+  project: openlex-kind
+  sources:
+    - repoURL: https://argoproj.github.io/argo-helm
+      chart: argocd-image-updater
+      targetRevision: "1.2.4"
+      helm:
+        valuesObject:
+          config:
+            logLevel: info
+            # Let the updater list tags from GHCR using the `ghcr` dockerconfig Secret.
+            registries:
+              - name: GitHub Container Registry
+                prefix: ghcr.io
+                api_url: https://ghcr.io
+                credentials: pullsecret:argocd/ghcr
+                default: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -25,6 +25,9 @@ print colored, timestamped step banners.
 
 - `.env` with **`ANTHROPIC_API_KEY`** + **`NY_OPEN_LEG_API_KEY`** set (compose-master guards this; kind ingestion also needs the NY key).
 - kind also needs **`GHCR_USERNAME`/`GHCR_PAT`** (a PAT with `read:packages`) to pull the private GHCR images.
+- kind image automation also needs **`GIT_WRITE_TOKEN`** (a PAT with `repo` scope) for Argo CD
+  Image Updater's git write-back, and a one-time `scripts/kind/gitops-branch-init.sh` to create
+  the **`gitops/kind`** branch the openlex app tracks (see ADR-0007).
 - Ensure `.env` **ends with a trailing newline** (see the postgres-exporter gotcha below).
 
 ## Access (kind) — start each in its own terminal; they block on `kubectl port-forward`
@@ -51,6 +54,7 @@ These are the real failure modes a fresh cluster hits. Everything is verifiable 
 | **postgres-exporter** pod `CreateContainerConfigError` | `openlex-secrets` is missing the derived `POSTGRES_EXPORTER_DSN` key — usually because `.env` had no trailing newline, so the appended key merged into the previous line. | Ensure `.env` ends with a newline, re-run `scripts/kind/secrets-bootstrap.sh`, `kubectl -n openlex delete pod -l app.kubernetes.io/name=prometheus-postgres-exporter`. Verify the key exists in the Secret. |
 | **Grafana "No data"** on every panel and/or **can't log in** | Stale port-forward: the Grafana pod rolled during `up`, killing your earlier `kubectl port-forward`. | Restart `scripts/kind/observability-port-forward.sh`; open `localhost:3000` in an **incognito** window. Anonymous **Viewer** is enabled — no login needed to view. |
 | **Jaeger** "parent span … is not in the trace; skipping clock skew adjustment" | Benign — a parent (e.g. the browser root span) isn't in the trace, so Jaeger can't clock-skew-adjust. | No action. Not data loss; the trace still renders. |
+| **New image not deploying** (app stuck on an old tag) | Argo CD Image Updater can't read GHCR / write `gitops/kind` (missing `GIT_WRITE_TOKEN`/`ghcr` secret), or the `gitops/kind` branch doesn't exist. | Check the `argocd-image-updater` pod logs in `argocd`; ensure `GIT_WRITE_TOKEN` is set + re-run `secrets-bootstrap.sh`; run `scripts/kind/gitops-branch-init.sh` if the branch is missing (see ADR-0007). |
 
 ## Verifying from outside the cluster (read-only)
 

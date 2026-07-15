@@ -278,10 +278,19 @@ resources than Compose.
 roll out, then ingest + seed:
 
 ```bash
-scripts/kind-master.sh up   # cluster -> ghcr secret -> secrets -> argocd -> wait -> ingest -> seed
+scripts/kind-master.sh up    # cluster -> secrets -> gitops branch -> argocd -> wait -> ingest -> seed
 # ...and to tear the cluster down:
 scripts/kind-master.sh down
 ```
+
+> **GitOps image automation (see [ADR-0007](docs/decisions/0007-argocd-image-updater.md)).**
+> `deploy.yml` builds/pushes images but does **not** commit tags to `develop`. **Argo CD Image
+> Updater** watches GHCR and git-writes the image tags to a dedicated **`gitops/kind`** branch
+> that the app tracks — so `develop` stays code-only and `develop → main` promotions never snag
+> on a bot commit. First-time setup: set **`GIT_WRITE_TOKEN`** in `.env` (a GitHub PAT with
+> `repo` scope, for the updater's git write-back). `kind-master.sh up` creates the `gitops/kind`
+> branch automatically if it's missing (or run `scripts/kind/gitops-branch-init.sh` to refresh
+> it to the latest `develop`).
 
 Then open access in separate terminals (these block on `kubectl port-forward`):
 
