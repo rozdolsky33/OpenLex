@@ -36,22 +36,40 @@ done_banner() { # done_banner "message"
 
 # --- port-forward runner (shared by the *-port-forward.sh scripts) ---
 # kind/eks have no ingress for these services, so we background one `kubectl port-forward` per
-# service and clean them all up on Ctrl-C. Usage:
+# service and clean them all up on Ctrl-C. Each forward is *self-reconnecting*: a plain
+# `kubectl port-forward` dies when the pod it latched onto is replaced (a Grafana/app pod roll
+# during an ArgoCD sync or `up`), which used to silently break the browser until the user
+# re-ran the script. Here a supervisor loop restarts the forward whenever it drops, so it
+# survives pod rolls. Usage:
 #   pf <namespace> <service> <local:remote>   # ...repeat per service
 #   pf_wait                                    # trap + block until Ctrl-C
 _PF_PIDS=()
 _pf_cleanup() {
   echo
   echo "Stopping port-forwards..."
+  # TERM each supervisor; its own trap kills the kubectl child it currently owns.
   for pid in "${_PF_PIDS[@]}"; do kill "${pid}" 2>/dev/null || true; done
+  wait 2>/dev/null || true
 }
-pf() {
-  kubectl port-forward -n "$1" "svc/$2" "$3" &
+pf() { # pf <namespace> <service> <local:remote>
+  (
+    kpid=""
+    # On stop, kill the kubectl child this supervisor currently owns, then exit the loop.
+    trap '[ -n "$kpid" ] && kill "$kpid" 2>/dev/null; exit 0' TERM INT
+    while true; do
+      kubectl port-forward -n "$1" "svc/$2" "$3" >/dev/null 2>&1 &
+      kpid=$!
+      wait "$kpid" 2>/dev/null
+      # kubectl exited: the pod behind the Service was replaced or the connection dropped.
+      # Brief pause, then reconnect to whatever pod now backs the Service.
+      sleep 2
+    done
+  ) &
   _PF_PIDS+=($!)
 }
 pf_wait() {
   trap _pf_cleanup EXIT INT TERM
   echo
-  echo "Press Ctrl-C to stop all port-forwards."
+  echo "Forwards auto-reconnect on pod rolls. Press Ctrl-C to stop all port-forwards."
   wait
 }
