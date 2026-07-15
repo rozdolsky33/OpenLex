@@ -51,14 +51,19 @@ Local `kind` needs none of this — it's local-only, no AWS involved.
 
 ## Static site deploy (`apps/web`, 7.8)
 
-After `terraform apply`, set these as GitHub repository (or `production` environment)
-**variables** (not secrets — none of these are sensitive), Settings -> Secrets and variables ->
-Actions -> Variables:
+After `terraform apply` completes, the four GitHub Actions **variables** `deploy-static.yml`
+needs are all Terraform outputs — so don't hand-copy them. Run the automation, which reads the
+outputs and upserts the variables (idempotent):
 
-- `OPENLEX_DOMAIN` — the same value as `var.domain_name`.
-- `OPENLEX_WEB_BUCKET` — `terraform output web_bucket_name`.
-- `OPENLEX_CLOUDFRONT_DISTRIBUTION_ID` — `terraform output cloudfront_distribution_id`.
-- `GITHUB_ACTIONS_DEPLOY_WEB_ROLE_ARN` — `terraform output github_actions_deploy_web_role_arn`.
+```bash
+scripts/eks/github-deploy-vars.sh        # needs `gh auth login` + terraform init here
+```
+
+It sets `OPENLEX_DOMAIN`, `OPENLEX_WEB_BUCKET`, `OPENLEX_CLOUDFRONT_DISTRIBUTION_ID`, and
+`OPENLEX_DEPLOY_WEB_ROLE_ARN` (the last one **cannot** be named `GITHUB_ACTIONS_...` — GitHub
+reserves the `GITHUB_` prefix and rejects it). See the full pipeline, the DNS/cert gate that
+must clear before `cloudfront_distribution_id` exists, and troubleshooting in
+[docs/infrastructure/web-deploy.md](../../docs/infrastructure/web-deploy.md).
 
 `.github/workflows/deploy-static.yml` then deploys automatically on every push to `main` that
 touches `apps/web/**`.

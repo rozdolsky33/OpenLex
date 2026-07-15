@@ -38,7 +38,7 @@ jobs:
       - name: Configure AWS credentials (OIDC, no static keys)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.GITHUB_ACTIONS_DEPLOY_WEB_ROLE_ARN }}
+          role-to-assume: ${{ vars.OPENLEX_DEPLOY_WEB_ROLE_ARN }}
           aws-region: us-east-1
 
       - name: Sync to S3

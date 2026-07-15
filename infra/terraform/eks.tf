@@ -8,12 +8,27 @@ module "eks" {
   cluster_endpoint_public_access  = true
   cluster_endpoint_private_access = false
 
+  # Grant the IAM principal that runs `terraform apply` (the cluster creator) an
+  # AmazonEKSClusterAdminPolicy access entry. Module v20 defaults this to false, which leaves
+  # the creator unable to run kubectl against its own cluster (401 "must be logged in"). Kept
+  # in Terraform (not a manual `aws eks create-access-entry`) so cluster access is codified,
+  # not drift.
+  enable_cluster_creator_admin_permissions = true
+
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.public_subnets # no private subnets — see vpc.tf
 
   enable_irsa = true
 
   node_security_group_additional_rules = local.node_security_group_additional_rules
+
+  # Both node groups use Graviton (t4g.*) instances — see var.node_instance_type /
+  # var.observability_node_instance_type. The module defaults ami_type to AL2023_x86_64_STANDARD,
+  # which EKS rejects for arm64 instances ("[t4g.medium] is not a valid instance type for
+  # requested amiType AL2023_x86_64_STANDARD"). Set the arm64 AMI once here for all groups.
+  eks_managed_node_group_defaults = {
+    ami_type = "AL2023_ARM_64_STANDARD"
+  }
 
   eks_managed_node_groups = {
     # Mirrors kind's dedicated-worker split (docs/infrastructure/kubernetes-topology.md):
