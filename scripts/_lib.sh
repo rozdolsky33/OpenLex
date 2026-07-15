@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Shared visual helpers for the master scripts (scripts/kind-master.sh, scripts/compose-master.sh).
-# Colors auto-disable when stdout isn't a TTY (CI, pipes) or when NO_COLOR is set.
+# Shared helpers for the scripts/ orchestrators: colored step output for the master scripts
+# (kind-master.sh, compose-master.sh) and a small port-forward runner shared by the
+# *-port-forward.sh scripts. Colors auto-disable when stdout isn't a TTY (CI, pipes) or when
+# NO_COLOR is set.
 
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
   C_RESET=$'\033[0m'; C_BOLD=$'\033[1m'; C_DIM=$'\033[2m'
@@ -30,4 +32,26 @@ die()  { printf '\n%s[error] %s%s\n' "$C_RED" "$1" "$C_RESET" >&2; exit 1; }
 
 done_banner() { # done_banner "message"
   printf '\n%s%s[done] %s%s\n' "$C_BOLD" "$C_GREEN" "$1" "$C_RESET"
+}
+
+# --- port-forward runner (shared by the *-port-forward.sh scripts) ---
+# kind/eks have no ingress for these services, so we background one `kubectl port-forward` per
+# service and clean them all up on Ctrl-C. Usage:
+#   pf <namespace> <service> <local:remote>   # ...repeat per service
+#   pf_wait                                    # trap + block until Ctrl-C
+_PF_PIDS=()
+_pf_cleanup() {
+  echo
+  echo "Stopping port-forwards..."
+  for pid in "${_PF_PIDS[@]}"; do kill "${pid}" 2>/dev/null || true; done
+}
+pf() {
+  kubectl port-forward -n "$1" "svc/$2" "$3" &
+  _PF_PIDS+=($!)
+}
+pf_wait() {
+  trap _pf_cleanup EXIT INT TERM
+  echo
+  echo "Press Ctrl-C to stop all port-forwards."
+  wait
 }
