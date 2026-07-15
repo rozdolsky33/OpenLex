@@ -30,6 +30,11 @@ target, not something deployed (see `docs/decisions/0001-monorepo-restructure.md
   `deploy-static.yml`), the four GitHub Actions variables it needs and where each comes from,
   the `scripts/eks/github-deploy-vars.sh` automation that sets them from Terraform outputs, the
   DNS/ACM gate that blocks the apply, and a troubleshooting matrix.
+- **[eks-argocd-bootstrap.md](./eks-argocd-bootstrap.md)** — the one-time GitOps bootstrap for
+  the in-cluster app + platform stack on `openlex-eks-demo`: the ordered prerequisites (kube
+  access, the full table of manifest placeholders to fill and where each value comes from, the
+  GHCR→ECR image gap, secrets), running `argocd-bootstrap.sh eks-demo`, and the steady-state
+  image-update flow.
 
 **TL;DR if you only read one thing**: the EKS control-plane fee ($73/mo flat, regardless of
 workload) is the biggest fixed cost for a project this size — bigger than the compute it

@@ -30,7 +30,7 @@ spec:
           existingSecret: oauth2-proxy-secrets
         extraArgs:
           provider: github
-          github-user: "<GITHUB_USERNAME>"
+          github-user: "rozdolsky33"
           email-domain: "*"
           upstreams: static://202
           http-address: "0.0.0.0:4180"
