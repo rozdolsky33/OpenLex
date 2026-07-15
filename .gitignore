@@ -30,3 +30,4 @@ infra/terraform/.terraform/
 infra/terraform/*.tfstate*
 infra/terraform/backend.hcl
 infra/terraform/terraform.tfvars
+infra/terraform/.terraform.lock.hcl
