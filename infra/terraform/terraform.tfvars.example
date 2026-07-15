@@ -1,2 +1,8 @@
 region      = "us-east-1"
-domain_name = "demo.your-domain.example.com"
+# Delegated subdomain of arwest.dev -- terraform creates a Route53 hosted zone for exactly
+# this name (not the arwest.dev root). After `terraform apply`, `terraform output
+# route53_name_servers` gives the 4 nameservers to add as an NS record for the "openlex"
+# subdomain wherever arwest.dev's DNS is managed -- see README.md's "First-time setup" step 3.
+# Everything else (app./api./grafana./argocd.openlex.arwest.dev) is created automatically by
+# external-dns + this Terraform config from there; no other manual DNS records are needed.
+domain_name = "openlex.arwest.dev"

@@ -2,10 +2,13 @@
 
 Companion to [`aws-eks-cost-estimate.md`](./aws-eks-cost-estimate.md) and
 [`mlops-guide.md`](./mlops-guide.md). These render as diagrams directly on GitHub (Mermaid).
-Reflects the target architecture from
-`docs/decisions/0001-monorepo-restructure.md` plus the AWS/EKS deployment layer, which does
-not exist yet (see "Current state" in the root `CLAUDE.md`) — this is where things go once
-`infra/kubernetes` and `infra/terraform` stop being placeholders.
+Service topology below reflects `docs/decisions/0001-monorepo-restructure.md`'s design and is
+real and live (both docker-compose and kind). The AWS/EKS deployment layer is still the target
+architecture, not yet deployed — see `docs/superpowers/specs/
+2026-07-14-phase7-aws-rds-secrets-manager-design.md` for the current design. For node-level
+topology (taints, scheduling, PDBs, HA) rather than service topology, see
+[`kubernetes-topology.md`](./kubernetes-topology.md) instead — that detail isn't duplicated
+here.
 
 ## 1. Service topology (logical, environment-agnostic)
 

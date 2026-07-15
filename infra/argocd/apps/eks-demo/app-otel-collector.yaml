@@ -1,0 +1,45 @@
+# infra/argocd/apps/eks-demo/app-otel-collector.yaml
+#
+# Identical to infra/argocd/apps/kind/app-otel-collector.yaml — same chart/version/
+# values-base.yaml, same otlp/tempo + otlp/jaeger dual export (no AWS exporters; see the
+# plan's "Note on the 7.6/7.9 revision"). Only `project` and the values-repo source's
+# `targetRevision` (main, not develop — eks-demo tracks main) differ.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: otel-collector
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: openlex-eks-demo
+  sources:
+    - repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
+      chart: opentelemetry-collector
+      targetRevision: "0.165.*"
+      helm:
+        valueFiles:
+          - $values/infra/monitoring/otel-collector/values-base.yaml
+        valuesObject:
+          nodeSelector:
+            openlex.dev/workload: observability
+          tolerations:
+            - key: openlex.dev/workload
+              operator: Equal
+              value: observability
+              effect: NoSchedule
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 256Mi }
+    - repoURL: https://github.com/rozdolsky33/OpenLex.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

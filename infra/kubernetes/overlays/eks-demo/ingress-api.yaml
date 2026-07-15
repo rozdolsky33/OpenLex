@@ -2,6 +2,11 @@
 # Start with cluster-issuer: letsencrypt-staging (see infra/argocd/apps/eks-demo/), switch to
 # letsencrypt-prod once the staging issuance succeeds end-to-end (avoids burning Let's
 # Encrypt's production rate limit while debugging HTTP-01 reachability).
+#
+# api.<DOMAIN> (not app.<DOMAIN>) -- app.<DOMAIN> now goes to CloudFront/S3 for apps/web's
+# static build instead (infra/terraform/static-site.tf, 7.8). This ingress only ever routed
+# to the openlex-api Service directly (there was no separate web ingress before this), so the
+# fix is a host-value rename, not a routing change.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -13,10 +18,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - app.<DOMAIN>
+        - api.<DOMAIN>
       secretName: openlex-api-tls
   rules:
-    - host: app.<DOMAIN>
+    - host: api.<DOMAIN>
       http:
         paths:
           - path: /

@@ -12,15 +12,20 @@ on:
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
-    # openlex_shared.config.Settings requires these three at import time (no .env file exists
-    # in CI). Only apps/api/tests + packages/*/tests run here -- all mock external calls, so
-    # dummy values are correct here; never used for a real Claude call or DB connection.
-    env:
-      ANTHROPIC_API_KEY: ci-placeholder
-      DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
-      JWT_SECRET_KEY: ci-placeholder-not-a-real-secret-32chars
     steps:
       - uses: actions/checkout@v4
+      - name: Generate throwaway CI config
+        # openlex_shared.config.Settings requires these at import time (no .env exists in CI).
+        # Only apps/api/tests + packages/*/tests run here -- all mock external calls, so these
+        # are never used for a real Claude call, DB connection, or token check. Generated at
+        # runtime rather than hardcoded so secret scanners (gitleaks/GitGuardian) never see a
+        # secret-shaped literal in this file.
+        run: |
+          {
+            echo "ANTHROPIC_API_KEY=ci-not-used"
+            echo "DATABASE_URL=postgresql+asyncpg://ci-not-used/ci"
+            echo "JWT_SECRET_KEY=$(openssl rand -hex 32)"
+          } >> "$GITHUB_ENV"
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true

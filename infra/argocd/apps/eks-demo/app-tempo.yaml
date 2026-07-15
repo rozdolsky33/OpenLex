@@ -1,0 +1,47 @@
+# infra/argocd/apps/eks-demo/app-tempo.yaml
+#
+# Identical to infra/argocd/apps/kind/app-tempo.yaml. persistence.enabled/size (in the shared
+# values-base.yaml) binds against the gp3 StorageClass (Phase 7a Task 5's default-class annotation) --
+# no storageClassName override needed here, same as kind relying on its own default `standard`
+# StorageClass.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tempo
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: openlex-eks-demo
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: tempo
+      targetRevision: "1.24.*"
+      helm:
+        valueFiles:
+          - $values/infra/monitoring/tempo/values-base.yaml
+        valuesObject:
+          nodeSelector:
+            openlex.dev/workload: observability
+          tolerations:
+            - key: openlex.dev/workload
+              operator: Equal
+              value: observability
+              effect: NoSchedule
+          tempo:
+            memBallastSizeMbs: 128
+            resources:
+              requests: { cpu: 50m, memory: 512Mi }
+              limits: { cpu: 500m, memory: 1536Mi }
+    - repoURL: https://github.com/rozdolsky33/OpenLex.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

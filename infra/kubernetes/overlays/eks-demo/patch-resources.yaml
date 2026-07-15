@@ -1,22 +1,53 @@
-# A single t4g.medium (4GB RAM) also hosts ArgoCD + ingress-nginx + cert-manager +
-# external-dns + external-secrets — keep these conservative. See
-# docs/infrastructure/aws-eks-cost-estimate.md and the plan's "gotchas" section.
+# infra/kubernetes/overlays/eks-demo/patch-resources.yaml
+#
+# Mirrors infra/kubernetes/overlays/kind/patch-resources.yaml's nodeSelector/anti-affinity
+# pattern, adjusted for a real multi-AZ cluster (see infra/terraform/eks.tf's `apps` node
+# group — fixed at 2 nodes, one per AZ): anti-affinity is `required` (hard), not kind's
+# `preferred` (soft), and topologyKey is the AZ label, not the per-node hostname label —
+# safe here specifically because EKS managed node groups replace a drained/failed node
+# automatically, unlike kind's fixed 2-node ceiling (see docs/infrastructure/
+# kubernetes-topology.md for why kind stays soft).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: openlex-api
 spec:
+  replicas: 2
   template:
     spec:
+      nodeSelector:
+        openlex.dev/workload: apps
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: openlex-api
+              topologyKey: topology.kubernetes.io/zone
       containers:
         - name: api
+          imagePullPolicy: IfNotPresent
           resources:
             requests:
-              cpu: 50m
-              memory: 128Mi
+              cpu: 250m
+              memory: 512Mi
             limits:
-              cpu: 200m
-              memory: 256Mi
+              cpu: 1000m
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 90
+            periodSeconds: 15
+            failureThreshold: 5
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -25,12 +56,15 @@ metadata:
 spec:
   template:
     spec:
+      nodeSelector:
+        openlex.dev/workload: apps
       containers:
         - name: worker
+          imagePullPolicy: IfNotPresent
           resources:
             requests:
-              cpu: 50m
-              memory: 128Mi
+              cpu: 250m
+              memory: 512Mi
             limits:
-              cpu: 200m
-              memory: 256Mi
+              cpu: 1000m
+              memory: 1Gi
