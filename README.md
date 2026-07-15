@@ -35,6 +35,7 @@ actual thing being showcased.
   - [1. Docker Compose (default dev loop)](#1-docker-compose--default-dev-loop)
   - [2. kind (local Kubernetes + GitOps + observability)](#2-kind--local-kubernetes--gitops--observability)
   - [3. AWS EKS (production demo)](#3-aws-eks--production-demo)
+- [Agentic development with Claude Code](#agentic-development-with-claude-code)
 - [Repository layout](#repository-layout)
 - [Testing](#testing)
 - [CI/CD and legal-accuracy evaluation](#cicd-and-legal-accuracy-evaluation)
@@ -377,6 +378,65 @@ resources than docker-compose does. See
 what it needs and why, and
 [`docs/infrastructure/dev-workflow-and-branching.md`](docs/infrastructure/dev-workflow-and-branching.md)
 for how the two fit together with CI/CD.
+
+## Agentic development with Claude Code
+
+This repo ships project context for [Claude Code](https://claude.com/claude-code) so an agent
+can drive routine operations — bringing environments up/down, ingesting, seeding, and
+troubleshooting — instead of you running each script by hand. It's all plain files under
+`.claude/` and `CLAUDE.md`; nothing to install.
+
+### Setup
+
+1. Install Claude Code and open it in the repo root (`claude` in the terminal, or the IDE
+   extension). It reads `CLAUDE.md` (project overview, conventions, commands) automatically.
+2. Have your `.env` filled in (same keys as the manual flow — see [Configuration](#configuration)).
+   The agent will prompt you if a required key is missing.
+3. That's it — the skills, commands, and agents below are discovered from `.claude/`
+   automatically. No separate config.
+
+### What's available
+
+**Slash commands** (`.claude/commands/`) — type these in Claude Code:
+
+| Command | What it does |
+|---------|--------------|
+| `/bringup [compose\|kind] [up\|down]` | Drives a whole local environment end-to-end, and troubleshoots if a step fails (via the `local-environment` skill). |
+| `/adr` | Scaffolds a new Architecture Decision Record in `docs/decisions/`. |
+
+**Skills** (`.claude/skills/`) — the agent loads these automatically when relevant:
+
+| Skill | When it applies |
+|-------|-----------------|
+| `local-environment` | Bring up / tear down / **troubleshoot** the compose + kind stacks. Encodes the fresh-cluster failure modes (empty-corpus abstain, unseeded-user 401, postgres-exporter secret, stale Grafana port-forward) as a symptom→fix matrix. |
+| `verify` | The concrete verification gate (lint, types, unit + real-DB integration tests) — run before claiming a change is done. |
+| `openlex-data-model` | Reading/writing the `documents`/`chunks` schema and hybrid retrieval. |
+| `ny-open-legislation-api` | Fetching statute text / adding seed data / debugging ingestion. |
+| `grounded-answer-contract` | Changing the Claude-based answer endpoint while keeping the answer-only-from-context + citation + disclaimer guarantees. |
+
+**Subagents** (`.claude/agents/`) — `backend-implementer` (FastAPI routers / retrieval /
+generation) and `data-ingestion` (statute + case-law pipeline).
+
+### How to run it
+
+Two equivalent ways to bring up an environment:
+
+```text
+# In Claude Code, run the command:
+/bringup kind up
+
+# ...or just ask in plain language:
+"bring up the kind environment and make sure the chat works"
+```
+
+The agent runs the same master scripts (`scripts/kind-master.sh` / `scripts/compose-master.sh`),
+watches the colored step output, and — if the app misbehaves — diagnoses it server-side and
+applies the documented fix, then tells you which port-forwards to start. Tear down the same
+way: `/bringup kind down` (it confirms first, since that deletes the cluster).
+
+Everything the agent does here you can also do manually — see
+[Running it — three ways](#running-it--three-ways). The agentic path just packages the
+sequence and the hard-won troubleshooting knowledge so you don't have to remember it.
 
 ## Repository layout
 
