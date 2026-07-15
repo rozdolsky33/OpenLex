@@ -18,10 +18,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - api.<DOMAIN>
+        - api.openlex.arwest.dev
       secretName: openlex-api-tls
   rules:
-    - host: api.<DOMAIN>
+    - host: api.openlex.arwest.dev
       http:
         paths:
           - path: /

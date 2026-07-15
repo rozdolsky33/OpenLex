@@ -14,17 +14,17 @@ metadata:
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-staging
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/auth-url: "https://grafana.<DOMAIN>/oauth2/auth"
-    nginx.ingress.kubernetes.io/auth-signin: "https://grafana.<DOMAIN>/oauth2/start?rd=$scheme://$host$request_uri"
+    nginx.ingress.kubernetes.io/auth-url: "https://grafana.openlex.arwest.dev/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-signin: "https://grafana.openlex.arwest.dev/oauth2/start?rd=$scheme://$host$request_uri"
     nginx.ingress.kubernetes.io/auth-response-headers: "X-Auth-Request-User, X-Auth-Request-Email"
 spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - grafana.<DOMAIN>
+        - grafana.openlex.arwest.dev
       secretName: grafana-tls
   rules:
-    - host: grafana.<DOMAIN>
+    - host: grafana.openlex.arwest.dev
       http:
         paths:
           - path: /oauth2

@@ -14,10 +14,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - argocd.<DOMAIN>
+        - argocd.openlex.arwest.dev
       secretName: argocd-server-tls
   rules:
-    - host: argocd.<DOMAIN>
+    - host: argocd.openlex.arwest.dev
       http:
         paths:
           - path: /

@@ -20,12 +20,12 @@ spec:
         aws:
           region: us-east-1
         domainFilters:
-          - "<DOMAIN>"
+          - "openlex.arwest.dev"
         txtOwnerId: openlex-eks-demo
         serviceAccount:
           name: external-dns
           annotations:
-            eks.amazonaws.com/role-arn: "<EXTERNAL_DNS_ROLE_ARN>"
+            eks.amazonaws.com/role-arn: "arn:aws:iam::651261648885:role/openlex-eks-demo-external-dns"
         resources:
           requests: { cpu: 25m, memory: 32Mi }
           limits: { cpu: 100m, memory: 64Mi }

@@ -20,10 +20,10 @@ resources:
 # this is manual for the first cut, automated later (Argo Image Updater or a CI tag-bump step).
 images:
   - name: openlex-api
-    newName: <ECR_ACCOUNT>.dkr.ecr.<REGION>.amazonaws.com/openlex-api
+    newName: 651261648885.dkr.ecr.us-east-1.amazonaws.com/openlex-api
     newTag: v0.1.0
   - name: openlex-worker
-    newName: <ECR_ACCOUNT>.dkr.ecr.<REGION>.amazonaws.com/openlex-worker
+    newName: 651261648885.dkr.ecr.us-east-1.amazonaws.com/openlex-worker
     newTag: v0.1.0
 
 patches:
