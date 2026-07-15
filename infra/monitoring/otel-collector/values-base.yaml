@@ -1,23 +1,22 @@
 # infra/monitoring/otel-collector/values-base.yaml
 #
 # Shared base values for the OTel Collector, consumed by both kind and any future eks-demo
-# Application. Phase 1 proved the receive-and-process path with a `debug`-only exporter for
-# all three signals. Tempo and Jaeger are now deployed, so the `traces` pipeline exports to
-# both real backends for comparison. `metrics`/`logs` stay `debug`-only — Loki/a real metrics
-# backend for OTel-sourced data are later phases, not this one.
+# Application. Traces export to Tempo + Jaeger. The `metrics` pipeline now also exports via the
+# `prometheus` exporter so OTLP metrics pushed by the one-shot apps/worker (which can't be
+# Prometheus-scraped like the long-running apps/api) reach Prometheus and the worker dashboard.
+# `logs` stay `debug`-only (Loki wiring is a later phase).
 
 mode: deployment
 
-# The chart no longer defaults image.repository (breaking change vs. the version this task
-# was drafted against) — it now errors at render time unless set explicitly. This config only
-# uses core components (otlp receiver, batch processor, debug exporter), all of which ship in
-# the core `otel/opentelemetry-collector` image, so we pin that (with the matching
-# `otelcol` command name) rather than pulling the larger `-contrib` image we don't need.
+# The `prometheus` exporter (added for the worker metrics bridge below) ships only in the
+# `-contrib` distribution, not core, so we pin the contrib image + its `otelcol-contrib`
+# command name. contrib is a superset of core -- the otlp receiver / batch processor / debug &
+# otlp exporters this config already used behave identically.
 image:
-  repository: otel/opentelemetry-collector
+  repository: otel/opentelemetry-collector-contrib
 
 command:
-  name: otelcol
+  name: otelcol-contrib
 
 config:
   receivers:
@@ -49,6 +48,14 @@ config:
       endpoint: jaeger.observability.svc.cluster.local:4317
       tls:
         insecure: true
+    # Re-exposes OTLP metrics (the worker's openlex_ingest_* instruments) as a Prometheus
+    # scrape endpoint on :8889. resource_to_telemetry_conversion turns OTel Resource
+    # attributes (service.name, k8s.pod.name, ...) into metric labels so the worker dashboard
+    # can select by service. Scraped via the `prometheus` port + ServiceMonitor endpoint below.
+    prometheus:
+      endpoint: 0.0.0.0:8889
+      resource_to_telemetry_conversion:
+        enabled: true
   service:
     pipelines:
       traces:
@@ -58,7 +65,7 @@ config:
       metrics:
         receivers: [otlp]
         processors: [batch]
-        exporters: [debug]
+        exporters: [debug, prometheus]
       logs:
         receivers: [otlp]
         processors: [batch]
@@ -78,6 +85,19 @@ ports:
   # existed: there was nothing to build one from.
   metrics:
     enabled: true
+  # The `prometheus` exporter's scrape endpoint (worker OTLP metrics re-exposed). Must match
+  # the exporter's :8889 above and be listed in serviceMonitor.metricsEndpoints to be scraped.
+  prometheus:
+    enabled: true
+    containerPort: 8889
+    servicePort: 8889
+    protocol: TCP
 
 serviceMonitor:
   enabled: true
+  # Scrape BOTH the collector's own self-telemetry (port "metrics", 8888) AND the prometheus
+  # exporter (port "prometheus", 8889) that carries the worker's openlex_ingest_* metrics.
+  # Listing metricsEndpoints overrides the chart default of [{port: metrics}], so include both.
+  metricsEndpoints:
+    - port: metrics
+    - port: prometheus
