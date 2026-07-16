@@ -206,8 +206,13 @@ only ever `develop → main`.
 `.claude/agents/`, `.claude/skills/`, and `.claude/commands/` hold project-specific context
 beyond this file:
 - Agents: `backend-implementer` (building out `apps/api`'s routers/`packages/legal_retrieval`/
-  `packages/legal_generation`), `data-ingestion` (statute/case-law ingestion pipeline).
+  `packages/legal_generation`), `data-ingestion` (statute/case-law ingestion pipeline),
+  `platform-observability` (observability stack, CI/CD, ArgoCD/GitOps, cluster/cloud infra —
+  the SRE/platform surface this project exists to demonstrate).
 - Skills: `openlex-data-model`, `ny-open-legislation-api`, `grounded-answer-contract`, `verify`,
-  `local-environment` (bring up / tear down / troubleshoot the compose + kind stacks).
+  `local-environment` (bring up / tear down / troubleshoot the compose + kind stacks),
+  `eks-platform-ops` (kind/EKS context discipline, `gitops/*` branch delivery, ArgoCD
+  selfHeal, cross-environment observability collisions), `openlex-observability` (metrics/
+  traces/dashboards/alert-rule conventions — naming, cardinality, where each piece lives).
 - Commands: `/adr` (scaffold an ADR), `/bootstrap [compose|kind] [up|down]` (drive a local
   environment end-to-end via the `local-environment` skill).

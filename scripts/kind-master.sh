@@ -44,6 +44,9 @@ up() {
   step "Install ArgoCD + sync the app-of-apps"
   scripts/kind/argocd-bootstrap.sh kind
 
+  step "Pin ArgoCD admin password from .env (ARGOCD_ADMIN)"
+  scripts/kind/argocd-admin-password.sh
+
   step "Wait for ArgoCD to create + roll out the app pods"
   for deploy in openlex-api openlex-worker; do
     info "waiting for deploy/${deploy} to be created by ArgoCD..."
@@ -65,6 +68,7 @@ up() {
   info "  scripts/kind/app-port-forward.sh            # Web UI :5173, API :8000"
   info "  scripts/kind/observability-port-forward.sh  # Grafana :3000 (anon Editor), ArgoCD :8080, Jaeger :16686"
   info "Log in to the app with the DEMO_* credentials from your .env."
+  info "ArgoCD logs in as: admin / ARGOCD_ADMIN (from your .env)."
   info "Re-run any port-forward after this script -- the pods just rolled, so older forwards are stale."
 }
 

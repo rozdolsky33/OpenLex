@@ -19,7 +19,7 @@ Both `up` flows are **idempotent** (safe to re-run). They chain the individual s
 print colored, timestamped step banners.
 
 - **compose up:** `.env` guard → `compose/bootstrap.sh` → wait for `/healthz` → `compose/ingest.sh all` → `seed/seed-demo-users.sh`.
-- **kind up:** `kind/up.sh` → `kind/ghcr-pull-secret-bootstrap.sh` → `kind/secrets-bootstrap.sh` → `kind/argocd-bootstrap.sh kind` → wait for `openlex-api`/`openlex-worker` rollout → `seed/kind-ingest.sh` → `seed/kind-seed-demo-users.sh`.
+- **kind up:** `kind/up.sh` → `kind/ghcr-pull-secret-bootstrap.sh` → `kind/secrets-bootstrap.sh` → `kind/argocd-bootstrap.sh kind` → `kind/argocd-admin-password.sh` (pins the ArgoCD `admin` password to `.env`'s `ARGOCD_ADMIN`) → wait for `openlex-api`/`openlex-worker` rollout → `seed/kind-ingest.sh` → `seed/kind-seed-demo-users.sh`.
 
 ## Prerequisites
 
@@ -38,6 +38,12 @@ The masters do **not** start port-forwards. After `up`, run:
 scripts/kind/app-port-forward.sh            # Web UI :5173, API :8000
 scripts/kind/observability-port-forward.sh  # Grafana :3000 (anon Editor), ArgoCD :8080, Jaeger :16686
 ```
+
+Logins (both pinned from `.env`, so no chart-generated random secrets):
+- **ArgoCD:** `admin` / `ARGOCD_ADMIN` — pinned by `kind/argocd-admin-password.sh` (replaces the
+  chart's random `argocd-initial-admin-secret`).
+- **Grafana:** `admin` / `GRAFANA_ADMIN_PASSWORD` — pinned by `kind/secrets-bootstrap.sh`. Grafana
+  also allows anonymous Editor with no login, so this is only needed for admin edits.
 
 Always (re)start port-forwards **after** `up` — the app/Grafana pods roll during setup, so any
 forward started earlier is stale (see the Grafana gotcha).

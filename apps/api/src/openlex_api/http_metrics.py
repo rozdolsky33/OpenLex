@@ -55,32 +55,42 @@ def setup_http_metrics(app: FastAPI) -> None:
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         start = time.perf_counter()
-        response = await call_next(request)
-        duration = time.perf_counter() - start
-
-        # Correlation-ID ergonomics: read the same way quota.py's _log_quota_event does, so a
-        # caller (support session, curl, browser devtools) can grab this and paste it into
-        # either Tempo or Jaeger's "search by trace ID" box without needing server-log access.
-        # Applied to every response, including excluded routes below -- this is a debugging
-        # aid, not a metric, so it isn't subject to the same noise-reduction exclusion.
-        span_context = trace.get_current_span().get_span_context()
-        if span_context.is_valid:
-            response.headers["X-Trace-Id"] = format(span_context.trace_id, "032x")
-
-        # scope["route"] is only populated by Starlette's Router once routing succeeds, which
-        # happens inside call_next -- must be read post-dispatch, not before. Unmatched (404)
-        # requests fall back to "unmatched" rather than the raw path, keeping the label bounded.
-        route = request.scope.get("route")
-        route_template = route.path if route is not None else "unmatched"
-        if route_template in _EXCLUDED_ROUTES:
+        # None until call_next returns; stays None if the handler raises an unhandled
+        # exception, in which case Starlette's ServerErrorMiddleware turns it into a 500. We
+        # record metrics in `finally` so those exception-500s are still counted -- otherwise the
+        # error-rate SLI is blind to exactly the failures that matter most (e.g. an upstream
+        # anthropic 529 surfacing as a raw 500).
+        response: Response | None = None
+        try:
+            response = await call_next(request)
             return response
+        finally:
+            duration = time.perf_counter() - start
 
-        status_class = f"{response.status_code // 100}xx"
-        HTTP_REQUESTS_TOTAL.labels(
-            method=request.method, route=route_template, status_class=status_class
-        ).inc()
-        HTTP_REQUEST_DURATION_SECONDS.labels(method=request.method, route=route_template).observe(
-            duration
-        )
+            # Correlation-ID ergonomics: read the same way quota.py's _log_quota_event does, so
+            # a caller (support session, curl, browser devtools) can grab this and paste it into
+            # either Tempo or Jaeger's "search by trace ID" box without needing server-log
+            # access. Applied to every response, including excluded routes below -- this is a
+            # debugging aid, not a metric, so it isn't subject to the noise-reduction exclusion.
+            if response is not None:
+                span_context = trace.get_current_span().get_span_context()
+                if span_context.is_valid:
+                    response.headers["X-Trace-Id"] = format(span_context.trace_id, "032x")
 
-        return response
+            # scope["route"] is populated by Starlette's Router once routing succeeds (before the
+            # handler runs, so it's set even when the handler then raises). Unmatched (404)
+            # requests fall back to "unmatched" rather than the raw path, keeping the label
+            # bounded.
+            route = request.scope.get("route")
+            route_template = route.path if route is not None else "unmatched"
+            if route_template not in _EXCLUDED_ROUTES:
+                # No response object means the handler raised -> ServerErrorMiddleware will
+                # return a 500; count it as such.
+                status_code = response.status_code if response is not None else 500
+                status_class = f"{status_code // 100}xx"
+                HTTP_REQUESTS_TOTAL.labels(
+                    method=request.method, route=route_template, status_class=status_class
+                ).inc()
+                HTTP_REQUEST_DURATION_SECONDS.labels(
+                    method=request.method, route=route_template
+                ).observe(duration)
