@@ -247,7 +247,8 @@ tags onto `gitops/eks` (based on `main`), which the openlex app then syncs. `mai
 3. Initialize the branch: `scripts/kind/gitops-branch-init.sh eks-demo` (creates `gitops/eks`
    from `main`).
 
-After that it's hands-off:
+After that it's hands-off *by design* (but see the status note below — this loop has not
+actually run on EKS yet):
 
 1. Push to `develop` → `deploy.yml` builds + pushes `openlex-{api,worker,web}:<sha>` to GHCR **and
    ECR** (no git commit).
@@ -255,3 +256,31 @@ After that it's hands-off:
 3. ArgoCD syncs the openlex app to the new image.
 
 See [dev-workflow-and-branching.md](./dev-workflow-and-branching.md) for the full flow.
+
+### Current status — the automated loop has never actually fired on EKS
+
+The design above is symmetric with kind on paper (same annotations, `newest-build` strategy, and
+`write-back-method`), but as of 2026-07-16 the automated write-back **has never run against
+`gitops/eks`.** Verify anytime from git history:
+
+- `git log --format='%an' origin/gitops/eks | sort -u` → only `Volodymyr Rozdolsky` and
+  `github-actions[bot]`. **Zero** commits authored by `argocd-image-updater` (contrast
+  `origin/gitops/kind`, which has 16 `build: automatic update of openlex` commits by that author).
+- `newTag` on `infra/kubernetes/overlays/eks-demo/kustomization.yaml` has only ever been the
+  `v0.1.0` placeholder across the branch's entire history — never a 40-hex commit sha. Since
+  `allow-tags` is `regexp:^[0-9a-f]{40}$`, a real write-back would show a sha tag. It doesn't.
+
+**So `gitops/eks` advances manually today**, two ways, both visible in its log: (a) merging
+`develop` into it via PR (e.g. `#62`/`#63`/`#64`), and (b) hand-authored eks-only fixes
+cherry-picked / pushed directly (e.g. `fix(eks-demo): add ServiceMonitor…`). This matches the
+`eks-platform-ops` skill's "reset local to origin + cherry-pick, never force-push" discipline —
+on EKS you *are* the image updater, by hand.
+
+**Why it fires on kind but not EKS:** the Image Updater only writes while its cluster is running
+and polling. The local kind cluster is up constantly (→ frequent write-backs); the EKS demo
+cluster is spun up occasionally and otherwise torn down, so the in-cluster controller isn't
+running to poll ECR. If the cluster *is* up and the loop still stays silent, next suspects are the
+IRSA→ECR auth (`ecr-login.sh`) or the git-write-back Secret from
+`externalsecret-image-updater-git.yaml` failing to resolve — check the updater pod logs in the
+`argocd` namespace before assuming the config is wrong. The automated path is wired and
+demonstrated end-to-end on kind; on EKS it's pending a persistently-running cluster to exercise it.
