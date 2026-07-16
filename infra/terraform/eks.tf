@@ -22,6 +22,24 @@ module "eks" {
 
   node_security_group_additional_rules = local.node_security_group_additional_rules
 
+  # VPC CNI with ENI prefix delegation. t4g.medium's default max-pods is only ~17 (ENI-IP bound);
+  # the platform + app exhaust it, so every reschedule (grafana roll, ingress-nginx roll, api
+  # surge pod) gets stuck "Too many pods" / Pending. Prefix delegation raises max-pods to ~110.
+  # Takes effect on newly-launched nodes — roll/replace the node groups after apply; on AL2023 EKS
+  # computes the higher max-pods automatically from this addon config.
+  cluster_addons = {
+    vpc-cni = {
+      resolve_conflicts_on_create = "OVERWRITE"
+      resolve_conflicts_on_update = "OVERWRITE"
+      configuration_values = jsonencode({
+        env = {
+          ENABLE_PREFIX_DELEGATION = "true"
+          WARM_PREFIX_TARGET       = "1"
+        }
+      })
+    }
+  }
+
   # Both node groups use Graviton (t4g.*) instances — see var.node_instance_type /
   # var.observability_node_instance_type. The module defaults ami_type to AL2023_x86_64_STANDARD,
   # which EKS rejects for arm64 instances ("[t4g.medium] is not a valid instance type for
@@ -38,7 +56,12 @@ module "eks" {
     # group, tainted so nothing else schedules there by accident.
     observability = {
       instance_types = [var.observability_node_instance_type] # larger than apps — see variables.tf
-      capacity_type  = "SPOT"
+      # ON_DEMAND, not SPOT: this is a single node and everything observability-tainted
+      # (grafana, oauth2-proxy, prometheus, loki, tempo, …) is pinned to it via nodeSelector, so a
+      # spot reclaim takes the whole observability stack + grafana SSO down until a replacement
+      # launches. One small on-demand node is worth the reliability. (apps stays SPOT — it has 2
+      # nodes and the api runs multiple replicas.)
+      capacity_type = "ON_DEMAND"
 
       min_size     = 1
       max_size     = 2
