@@ -33,7 +33,9 @@ spec:
               service:
                 name: oauth2-proxy
                 port:
-                  number: 4180
+                  # the oauth2-proxy Service exposes port 80 (-> pod's 4180); 4180 is the pod
+                  # port, not a Service port, so routing to :4180 yields 503 -> grafana 500.
+                  number: 80
           - path: /
             pathType: Prefix
             backend:
