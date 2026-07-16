@@ -23,8 +23,18 @@ actual thing being showcased.
 
 ---
 
+## Video walkthroughs
+
+| Video | Covers |
+|-------|--------|
+| [Architecting Hybrid Search: Fusing Vector and Lexical Indexes](https://youtu.be/yAGDFOg-g9I) | How `packages/legal_retrieval/search.py` fuses pgvector cosine similarity and Postgres full-text search into one ranked result via Reciprocal Rank Fusion. |
+| [Architecting OpenLex: The Offline-to-Online RAG Pipeline](https://youtu.be/wCRLt_BfV-0) | The split between the offline `apps/worker` ingestion path (fetch → normalize → chunk → embed → upsert) and the online `apps/api` query path (retrieve → generate). |
+
+---
+
 ## Table of contents
 
+- [Video walkthroughs](#video-walkthroughs)
 - [High-level architecture](#high-level-architecture)
 - [How a question gets answered (the RAG flow)](#how-a-question-gets-answered-the-rag-flow)
 - [Components](#components)
