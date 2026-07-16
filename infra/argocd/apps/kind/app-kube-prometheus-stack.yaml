@@ -28,7 +28,8 @@ spec:
                 effect: NoSchedule
           prometheus:
             prometheusSpec:
-              retention: 6h
+              # retention/retentionSize/storageSpec now live in the shared values-base.yaml
+              # (identical on kind and eks-demo) -- don't repeat them here.
               nodeSelector:
                 openlex.dev/workload: observability
               tolerations:
