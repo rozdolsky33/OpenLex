@@ -140,6 +140,90 @@ ArgoCD, Grafana, and the app are exposed via ingress-nginx + the `*.openlex.arwe
 once cert-manager issues certs and external-dns creates the records. Before DNS/certs settle you
 can port-forward — see `scripts/eks/observability-port-forward.sh`.
 
+- **ArgoCD UI:** https://argocd.openlex.arwest.dev — username `admin` (password below).
+
+### TLS certificates: promote staging → prod
+
+The ingress manifests ship with `cert-manager.io/cluster-issuer: letsencrypt-staging`
+(`argocd-ingress.yaml`, `ingress-grafana.yaml`, `overlays/eks-demo/ingress-api.yaml`) —
+**staging first, deliberately**, so HTTP-01 reachability can be debugged without burning Let's
+Encrypt's production rate limit (5 certs/domain/week). Staging certs are signed by an **untrusted
+root** (`CN=(STAGING) …`), so browsers reject them with `NET::ERR_CERT_AUTHORITY_INVALID` — the
+site looks like "it won't do HTTPS" even though the TLS handshake and the HTTP→HTTPS `308`
+redirect are both working.
+
+Once staging issuance succeeds end-to-end (`kubectl get certificate -A` → `READY=True`), promote
+to production by switching each annotation to `letsencrypt-prod` **on the branch that ships it**:
+
+| Ingress | ArgoCD app | Commit to branch |
+|---|---|---|
+| `argocd-ingress.yaml`, `ingress-grafana.yaml` | `root-eks-demo` | **`main`** |
+| `overlays/eks-demo/ingress-api.yaml` | `openlex` | **`gitops/eks`** |
+
+cert-manager sees the changed `issuerRef` and re-issues automatically (no secret deletion needed).
+Confirm the served cert is a real Let's Encrypt intermediate, not `(STAGING)`:
+
+```bash
+echo | openssl s_client -connect argocd.openlex.arwest.dev:443 \
+  -servername argocd.openlex.arwest.dev 2>/dev/null | openssl x509 -noout -issuer
+```
+
+> **Gotcha — cert-manager's in-cluster DNS self-check.** Before asking Let's Encrypt to validate,
+> cert-manager resolves the challenge host *from inside the cluster* (via CoreDNS) and GETs the
+> token path. Right after subdomain delegation / record creation, CoreDNS can still hold a
+> negative (NXDOMAIN) cache entry, so the challenge sits `pending` with `... no such host` even
+> though the record already resolves **publicly**. It self-heals when the negative cache expires;
+> `kubectl -n kube-system rollout restart deployment coredns` clears it immediately.
+
+### Admin login & password reset
+
+The admin password is **not** the default `argocd-initial-admin-secret`. `admin.password` in the
+`argocd-secret` is a bcrypt hash driven by External Secrets from **AWS Secrets Manager
+`openlex/argocd-admin`** (`argocd-admin-externalsecret.yaml`), which stores `password` (the bcrypt
+**hash**, not plaintext) and `passwordMtime`. The plaintext is only whatever you hashed when you
+seeded that secret by hand — bcrypt is one-way, so a lost password can't be recovered, only reset.
+
+**Reset through Secrets Manager, not `kubectl patch`.** ESO re-applies `argocd-secret` from
+Secrets Manager (`creationPolicy: Merge`, hourly), so a direct patch is reverted on the next sync.
+
+1. bcrypt-hash the new password (cost 10) and build the SM payload. Feed the password via
+   **stdin**, never as a shell argument, so `$` / backticks / etc. aren't expanded:
+
+   ```bash
+   read -rs PW; echo                       # type it (hidden); not echoed
+   uv run --with bcrypt python3 -c 'import sys,bcrypt,json,datetime
+   pw=sys.stdin.buffer.read().rstrip(b"\n")
+   h=bcrypt.hashpw(pw,bcrypt.gensalt(rounds=10)).decode()
+   mt=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+   json.dump({"password":h,"passwordMtime":mt},open("argocd-admin.json","w"))' <<<"$PW"
+   unset PW
+   ```
+
+2. Write it to Secrets Manager via `file://` (so the `$`-laden hash isn't shell-expanded).
+   `passwordMtime` (RFC3339/UTC) is what ArgoCD uses to invalidate existing sessions:
+
+   ```bash
+   aws secretsmanager put-secret-value --secret-id openlex/argocd-admin \
+     --region us-east-1 --secret-string file://argocd-admin.json
+   rm -f argocd-admin.json                 # the file holds the hash — delete it
+   ```
+
+3. Force ESO to re-sync, then restart the server so it reloads the credential:
+
+   ```bash
+   kubectl -n argocd annotate externalsecret argocd-admin-password force-sync="$(date +%s)" --overwrite
+   kubectl -n argocd rollout restart deploy/argocd-server
+   ```
+
+4. Log in as `admin` with the new password. Verify without a browser (200 + a `token` = success):
+
+   ```bash
+   printf '{"username":"admin","password":"%s"}' "$PW" > login.json  # or hand-write it
+   curl -sS -X POST https://argocd.openlex.arwest.dev/api/v1/session \
+     -H 'Content-Type: application/json' --data @login.json
+   rm -f login.json
+   ```
+
 ## Image promotion — Argo CD Image Updater (ECR)
 
 The eks openlex app doesn't track `main` directly — it tracks a machine-managed **`gitops/eks`**

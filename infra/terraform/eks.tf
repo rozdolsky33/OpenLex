@@ -46,6 +46,22 @@ module "eks" {
   # requested amiType AL2023_x86_64_STANDARD"). Set the arm64 AMI once here for all groups.
   eks_managed_node_group_defaults = {
     ami_type = "AL2023_ARM_64_STANDARD"
+
+    # ENI prefix delegation (cluster_addons.vpc-cni above) raises the IPs available per node, but
+    # on AL2023 the kubelet's --max-pods stays at the ENI-count default (~17 on t4g.medium) unless
+    # set explicitly. Raise it via nodeadm so pods can actually use the extra IPs — 110 is the
+    # standard prefix-delegation ceiling for <30-vCPU instances. New nodes only (roll after apply).
+    cloudinit_pre_nodeadm = [{
+      content_type = "application/node.eks.aws"
+      content      = <<-EOT
+        apiVersion: node.eks.aws/v1alpha1
+        kind: NodeConfig
+        spec:
+          kubelet:
+            config:
+              maxPods: 110
+      EOT
+    }]
   }
 
   eks_managed_node_groups = {
