@@ -2,11 +2,11 @@
 #
 # Mirrors infra/kubernetes/overlays/kind/patch-resources.yaml's nodeSelector/anti-affinity
 # pattern, adjusted for a real multi-AZ cluster (see infra/terraform/eks.tf's `apps` node
-# group — fixed at 2 nodes, one per AZ): anti-affinity is `required` (hard), not kind's
-# `preferred` (soft), and topologyKey is the AZ label, not the per-node hostname label —
-# safe here specifically because EKS managed node groups replace a drained/failed node
-# automatically, unlike kind's fixed 2-node ceiling (see docs/infrastructure/
-# kubernetes-topology.md for why kind stays soft).
+# group — fixed at 2 nodes, one per AZ): topologyKey is the AZ label, not the per-node hostname
+# label. Anti-affinity is `preferred` (soft), same as kind — a hard AZ requirement left the 2nd
+# replica Pending on t4g.medium's low max-pods (see the podAntiAffinity comment below). To get
+# strict one-per-AZ HA back, raise the apps node group's max-pods (ENI prefix delegation) or use
+# a larger instance type, then flip this back to `required`.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -19,11 +19,17 @@ spec:
         openlex.dev/workload: apps
       affinity:
         podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchLabels:
-                  app.kubernetes.io/name: openlex-api
-              topologyKey: topology.kubernetes.io/zone
+          # `preferred` (soft), not `required`: with t4g.medium's low max-pods, a strict
+          # one-replica-per-AZ leaves the 2nd replica Pending ("Too many pods") when the other
+          # AZ's node is at its pod ceiling. Soft still spreads replicas across AZs when there's
+          # room, but lets the 2nd one co-locate rather than never scheduling.
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: openlex-api
+                topologyKey: topology.kubernetes.io/zone
       containers:
         - name: api
           imagePullPolicy: IfNotPresent
