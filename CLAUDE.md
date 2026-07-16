@@ -194,6 +194,13 @@ Open pull requests against `develop`, not `main` — `main` is the production br
 `docs/infrastructure/dev-workflow-and-branching.md`), and `develop` is where day-to-day and
 feature work lands first.
 
+**The only branch that may target `main` is `develop`.** Every change flows
+`feature/fix branch → develop → main`. Never open or merge a PR from a feature/fix branch (or a
+cherry-pick branch) directly into `main`, even to work around something on `develop` that you
+don't want promoted yet (e.g. an unrelated in-flight commit). If `develop` isn't in a
+promotable state, fix that on `develop` first — do not bypass it. A PR whose base is `main` is
+only ever `develop → main`.
+
 ## Project skills & agents
 
 `.claude/agents/`, `.claude/skills/`, and `.claude/commands/` hold project-specific context
