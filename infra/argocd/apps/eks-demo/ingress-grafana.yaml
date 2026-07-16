@@ -14,7 +14,10 @@ metadata:
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/auth-url: "https://grafana.openlex.arwest.dev/oauth2/auth"
+    # auth-url is the INTERNAL oauth2-proxy Service (server-side auth check): pointing it at the
+    # external https URL makes ingress-nginx round-trip back through the NLB to itself for every
+    # request — slow (seen at ~38s) and destabilizing. auth-signin stays external (browser redirect).
+    nginx.ingress.kubernetes.io/auth-url: "http://oauth2-proxy.observability.svc.cluster.local:80/oauth2/auth"
     nginx.ingress.kubernetes.io/auth-signin: "https://grafana.openlex.arwest.dev/oauth2/start?rd=$scheme://$host$request_uri"
     nginx.ingress.kubernetes.io/auth-response-headers: "X-Auth-Request-User, X-Auth-Request-Email"
 spec:
