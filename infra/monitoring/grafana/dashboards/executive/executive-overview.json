@@ -40,17 +40,17 @@
     {
       "id": 2,
       "type": "stat",
-      "title": "Estimated Anthropic cost (30d)",
-      "description": "sum(increase(openlex_anthropic_cost_usd_total[30d])) -- from the static pricing table in legal_generation.anthropic_metrics, not a live billing API.",
+      "title": "Estimated Anthropic cost (cumulative)",
+      "description": "sum(openlex_anthropic_cost_usd_total) -- cumulative since the api pods started, from the static pricing table in legal_generation.anthropic_metrics (not a live billing API). Uses the raw counter, NOT increase(...[30d]): a prometheus_client labeled counter's series only appears AFTER its first increment, so increase() never sees the initial 0->cost edge and reads $0 after the very first query; with 6h Prometheus retention a 30d window also empties once traffic ages out. The raw counter shows cost from the first query and is reset-tolerant enough for the demo.",
       "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 4 }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value" },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(increase(openlex_anthropic_cost_usd_total[30d]))",
+          "expr": "sum(openlex_anthropic_cost_usd_total)",
           "instant": true
         }
       ]
