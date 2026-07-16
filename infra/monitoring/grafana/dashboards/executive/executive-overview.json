@@ -9,15 +9,15 @@
   "version": 1,
   "editable": true,
   "refresh": "",
-  "time": { "from": "now-30d", "to": "now" },
+  "time": { "from": "now-6h", "to": "now" },
   "templating": { "list": [] },
   "annotations": { "list": [] },
   "panels": [
     {
       "id": 1,
       "type": "stat",
-      "title": "Error-free rate, /query + /auth (30d)",
-      "description": "100 * (1 - sum(increase(openlex_http_requests_total{route=~\"/query|/auth.*\",status_class=\"5xx\"}[30d])) / sum(increase(openlex_http_requests_total{route=~\"/query|/auth.*\"}[30d]))) -- against the 99% SLO target from the production observability design doc.",
+      "title": "Error-free rate, /query + /auth (cumulative)",
+      "description": "100 * (1 - sum(openlex_http_requests_total{route=~\"/query|/auth.*\",status_class=\"5xx\"}) / sum(openlex_http_requests_total{route=~\"/query|/auth.*\"})) -- against the 99% SLO target from the production observability design doc. Raw cumulative counters (not increase(...[30d])): increase() is blind to a labeled counter's first sample, and 6h Prometheus retention can't feed a 30d window -- so the ratio is computed over the counters' full life since the api pods started.",
       "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
@@ -32,7 +32,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "100 * (1 - (sum(increase(openlex_http_requests_total{route=~\"/query|/auth.*\",status_class=\"5xx\"}[30d])) OR on() vector(0)) / sum(increase(openlex_http_requests_total{route=~\"/query|/auth.*\"}[30d])))",
+          "expr": "100 * (1 - (sum(openlex_http_requests_total{route=~\"/query|/auth.*\",status_class=\"5xx\"}) OR on() vector(0)) / sum(openlex_http_requests_total{route=~\"/query|/auth.*\"}))",
           "instant": true
         }
       ]
@@ -58,8 +58,8 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "p95 latency, /query (30d)",
-      "description": "histogram_quantile(0.95, sum by (le) (rate(openlex_http_request_duration_seconds_bucket{route=\"/query\"}[30d])))",
+      "title": "p95 latency, /query (cumulative)",
+      "description": "histogram_quantile(0.95, sum by (le) (openlex_http_request_duration_seconds_bucket{route=\"/query\"})) -- p95 over all /query requests since the api pods started. Uses the raw cumulative buckets, not rate(...[30d]): rate/increase is blind to a histogram's first observation and 6h retention can't feed a 30d window, so a windowed p95 reads empty after the first query or once traffic ages out.",
       "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
@@ -68,7 +68,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(openlex_http_request_duration_seconds_bucket{route=\"/query\"}[30d])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (openlex_http_request_duration_seconds_bucket{route=\"/query\"}))",
           "instant": true
         }
       ]
@@ -76,8 +76,8 @@
     {
       "id": 4,
       "type": "timeseries",
-      "title": "Query volume trend (30d)",
-      "description": "sum(rate(openlex_query_requests_total[1d]))",
+      "title": "Query volume trend (last 6h)",
+      "description": "sum(rate(openlex_query_requests_total[1d])) * 86400 -- accepted queries/day. This is a trend (not a cumulative tile), so it needs a time window: the dashboard defaults to the last 6h to match Prometheus retention here (a 30d axis would render a mostly-empty sliver).",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
@@ -97,8 +97,8 @@
     {
       "id": 5,
       "type": "piechart",
-      "title": "Tier mix (30d)",
-      "description": "sum by (tier) (increase(openlex_query_requests_total[30d])) -- share of accepted queries by silver/gold/platinum.",
+      "title": "Tier mix (cumulative)",
+      "description": "sum by (tier) (openlex_query_requests_total) -- share of accepted queries by silver/gold/platinum since the api pods started. Raw counter, not increase(...[30d]), so a tier appears from its first query and doesn't age out with 6h retention.",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
@@ -107,7 +107,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (tier) (increase(openlex_query_requests_total[30d]))",
+          "expr": "sum by (tier) (openlex_query_requests_total)",
           "legendFormat": "{{tier}}",
           "instant": true
         }
