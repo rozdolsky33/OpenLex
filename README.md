@@ -408,6 +408,43 @@ static-site GitHub variables) is in [`infra/terraform/README.md`](infra/terrafor
 cost/architecture reasoning (no NAT Gateway, one Spot node, no GPUs) is in
 [`docs/infrastructure/aws-eks-cost-estimate.md`](docs/infrastructure/aws-eks-cost-estimate.md).
 
+#### How a code change gets deployed to EKS (GitOps)
+
+Same Image Updater pattern as kind, over a second dedicated branch — but read this one
+carefully, because the promotion story is **not symmetric** the way it is for kind:
+
+```mermaid
+flowchart TB
+    subgraph CODE["human-reviewed branches"]
+        DEV[develop]
+        MAIN[main]
+    end
+    subgraph GITOPS["machine-managed deploy branches"]
+        GKIND["gitops/kind<br/>(cut from develop)"]
+        GEKS["gitops/eks<br/>(cut from main)"]
+    end
+
+    DEV -- "push: deploy.yml builds +<br/>pushes sha-tagged images to<br/>GHCR + ECR, every push" --> BUILD[deploy.yml]
+    BUILD --> IUK[Image Updater — kind]
+    BUILD --> IUE[Image Updater — eks]
+    IUK -- "git-write newest tag" --> GKIND
+    IUE -- "git-write newest tag" --> GEKS
+    MAIN -. "PR + manual cherry-pick<br/>(manifests/overlays only)" .-> GEKS
+
+    GKIND -- ArgoCD polls --> KIND[(kind cluster)]
+    GEKS -- ArgoCD polls --> EKS[(EKS demo cluster)]
+```
+
+`deploy.yml` pushes to **both** GHCR and ECR in the same run, and Argo CD Image Updater on the
+EKS cluster watches ECR with `update-strategy: newest-build` — so the **api/worker containers
+auto-promote to EKS the moment `develop` is pushed, with no `main` gate at all.** Only
+manifests/overlays (`infra/kubernetes/overlays/eks-demo/`, tracked by `root-eks-demo` off
+`main`) and the web static site (`deploy-static.yml`, also `main`-only) actually require a real
+`develop → main` promotion. Assuming `main` is a single production gate for everything —
+including the running containers — is the mistake this diagram exists to prevent; see
+[`docs/infrastructure/dev-workflow-and-branching.md`](docs/infrastructure/dev-workflow-and-branching.md)
+for the full reasoning.
+
 ---
 
 **This is the fast, native local dev loop — recommended default for day-to-day iteration.**
@@ -521,12 +558,26 @@ tests) before any change is claimed done.
 
 ## CI/CD and legal-accuracy evaluation
 
-📊 **[Published pipeline flow diagram](https://claude.ai/code/artifact/e57e1b47-0323-4a09-81c0-fa62b1a910bc)** —
-all ten GitHub Actions workflows mapped across their four triggers (PR quality gates, the
-`main`-merge guard, image build + GitOps deploy on `develop`, and static web deploy on `main`).
+Ten workflows across four triggers — most are path-filtered, so a PR only runs the jobs its
+diff actually touches. Only two checks are *required* to merge anywhere; everything else is a
+fast, scoped quality signal.
+
+| Workflow | Trigger | Scope | Required? |
+|---|---|---|---|
+| `security.yml` | PR, any branch | `dependency-audit` (pip-audit) + `secret-scan` (gitleaks) — no path filter | ✅ required |
+| `restrict-main-merges.yml` | PR → `main` | rejects any base branch other than `develop` | ✅ required |
+| `api.yml` | PR | `apps/api`, `packages/`, `schemas/`, lockfile — ruff/mypy/pytest | advisory |
+| `integration.yml` | PR | retrieval/parsing/models/shared, pipelines, migrations — real Postgres+pgvector | advisory |
+| `pipelines.yml` | PR | pipelines, `apps/worker`, parsing/models/shared — ruff/mypy/pytest | advisory |
+| `web.yml` | PR | `apps/web` | advisory |
+| `smoke.yml` | PR (skips docs-only) | real login → query → cited-answer against a live stack | advisory |
+| `evaluation.yml` | PR (path-filtered) + manual dispatch | golden-question legal-accuracy suite — see below | advisory |
+| `deploy.yml` | push → `develop` | multi-arch build, push GHCR + ECR — no git commit (Image Updater owns tag write-back) | — |
+| `deploy-static.yml` | push → `main`, `apps/web/**` | `apps/web` → S3 + CloudFront | — |
 
 > **Git workflow:** open PRs against `develop`, not `main`. `main` is the production branch;
-> a CI guard (`restrict-main-merges.yml`) blocks any PR to `main` that isn't from `develop`.
+> `restrict-main-merges.yml` is a **required status check**, so a PR to `main` that isn't from
+> `develop` is blocked at merge time, not just flagged.
 > See [`docs/infrastructure/dev-workflow-and-branching.md`](docs/infrastructure/dev-workflow-and-branching.md).
 
 The badges above track two different things, and it's worth being explicit about what each
