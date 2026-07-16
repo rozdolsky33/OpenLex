@@ -7,6 +7,7 @@ on:
     paths:
       - "apps/web/**"
       - ".github/workflows/deploy-static.yml"
+  workflow_dispatch: {} # allow manual runs from the Actions UI
 
 permissions:
   id-token: write # required for GitHub OIDC -> AWS
