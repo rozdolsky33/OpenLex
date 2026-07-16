@@ -29,6 +29,11 @@ module "eks" {
   # computes the higher max-pods automatically from this addon config.
   cluster_addons = {
     vpc-cni = {
+      # before_compute: create/configure the CNI addon BEFORE the node groups launch, so prefix
+      # delegation is already active when a node boots. Without this the node groups roll first and
+      # nodes come up with maxPods=110 but only ~17 IPs (no prefix delegation) -> they can't get
+      # enough pod IPs and fail to join ("NodeCreationFailure: new nodes are not joining").
+      before_compute              = true
       resolve_conflicts_on_create = "OVERWRITE"
       resolve_conflicts_on_update = "OVERWRITE"
       configuration_values = jsonencode({
