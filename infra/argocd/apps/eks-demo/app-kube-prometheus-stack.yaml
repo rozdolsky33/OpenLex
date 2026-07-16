@@ -90,6 +90,14 @@ spec:
                 auto_sign_up: true
                 whitelist: 10.42.0.0/16
                 sync_ttl: 60
+              auth:
+                # Sign-out: with auth.proxy, Grafana's own "Sign out" is a no-op — the next request
+                # still carries oauth2-proxy's X-Auth-Request-Email header and Grafana just
+                # re-logs-you-in. Redirect Grafana's sign-out to oauth2-proxy's /oauth2/sign_out so it
+                # actually clears the proxy session. (True end-to-end sign-out would also require
+                # logging out of GitHub itself, which GitHub OAuth can't force — but this ends the
+                # Grafana/proxy session, which is the meaningful logout here.)
+                signout_redirect_url: https://grafana.openlex.arwest.dev/oauth2/sign_out?rd=https%3A%2F%2Fgrafana.openlex.arwest.dev
               users:
                 auto_assign_org_role: Admin
             nodeSelector:
