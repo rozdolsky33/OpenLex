@@ -60,18 +60,16 @@ spec:
                 requests: { cpu: 10m, memory: 32Mi }
                 limits: { cpu: 100m, memory: 64Mi }
           grafana:
-            # PVC (gp3) so Grafana's SQLite DB persists across restarts. With the default emptyDir
-            # every restart re-provisions all dashboards into a fresh DB, and the resulting
-            # SQLITE_BUSY lock returns HTTP 500 for ~1-2 min each time. A persistent DB is
-            # provisioned once, so restarts are instant and the 500 window is gone.
-            persistence:
-              enabled: true
-              type: pvc
-              storageClassName: gp3
-              accessModes: ["ReadWriteOnce"]
-              size: 2Gi
-            # Recreate, not RollingUpdate: a ReadWriteOnce EBS volume can't be attached to the old
-            # and new pods at once, so a rolling update would deadlock on the PVC.
+            # No PVC — Grafana is stateless here: every dashboard and datasource is provisioned
+            # from ConfigMaps (the observability-dashboards app), and users are auto-created by
+            # GitHub SSO, so nothing in Grafana's SQLite DB needs to survive a restart. A gp3 PVC
+            # was tried but gp3 is WaitForFirstConsumer, and ArgoCD health-gates the PVC to Bound
+            # before it will roll the Deployment to mount it — a circular deadlock (PVC never binds
+            # without a consumer; the consumer pod never rolls until the PVC binds). See
+            # docs/postmortems/2026-07-16-eks-apps-node-capacity-and-grafana-pvc-deadlock.md.
+            # emptyDir + Recreate is the right shape: Recreate keeps exactly one Grafana pod at a
+            # time, so the SQLITE_BUSY-lock-on-restart 500 (the only reason a PVC was considered)
+            # can't happen — there's never a second pod contending for the DB file.
             deploymentStrategy:
               type: Recreate
             nodeSelector:
