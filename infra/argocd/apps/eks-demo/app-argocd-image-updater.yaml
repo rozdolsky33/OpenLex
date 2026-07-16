@@ -35,7 +35,7 @@ spec:
             create: true
             name: argocd-image-updater
             annotations:
-              eks.amazonaws.com/role-arn: "<IMAGE_UPDATER_ROLE_ARN>"
+              eks.amazonaws.com/role-arn: "arn:aws:iam::651261648885:role/openlex-eks-demo-image-updater"
           config:
             logLevel: info
             registries:
