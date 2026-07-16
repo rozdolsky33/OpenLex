@@ -18,6 +18,12 @@ spec:
     helm:
       valuesObject:
         controller:
+          # The chart's admission-webhook creation runs as Helm-hook Jobs that self-delete; ArgoCD
+          # then fails the sync ("Job/ingress-nginx-admission-create is missing"), so the controller
+          # Deployment never gets created. Disable the admission webhook — acceptable for this demo
+          # (it only validates Ingress specs at admission time) and the standard ArgoCD workaround.
+          admissionWebhooks:
+            enabled: false
           service:
             type: LoadBalancer
             annotations:

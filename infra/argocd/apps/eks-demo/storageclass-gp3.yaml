@@ -1,0 +1,20 @@
+# Cluster-default gp3 StorageClass, created EARLY (root-managed, sync-wave -2) so PVCs that bind
+# on a default StorageClass — Loki's and Tempo's (wave 0) — can provision. It previously lived in
+# infra/kubernetes/overlays/eks-demo/ (the openlex app, wave 1), which was too late: the
+# observability apps came up first and their PVCs sat unbound. The EKS aws-ebs-csi-driver addon
+# installs the CSI driver but no gp3 StorageClass, and EKS's built-in gp2 is not marked default on
+# this cluster — so nothing satisfied a default-class PVC until this.
+#
+# If a cluster ever ships gp2 already marked default, unmark it once (documented, imperative):
+#   kubectl patch storageclass gp2 -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+    argocd.argoproj.io/sync-wave: "-2"
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer
+parameters:
+  type: gp3
