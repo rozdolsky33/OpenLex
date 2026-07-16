@@ -208,6 +208,8 @@ beyond this file:
 - Agents: `backend-implementer` (building out `apps/api`'s routers/`packages/legal_retrieval`/
   `packages/legal_generation`), `data-ingestion` (statute/case-law ingestion pipeline).
 - Skills: `openlex-data-model`, `ny-open-legislation-api`, `grounded-answer-contract`, `verify`,
-  `local-environment` (bring up / tear down / troubleshoot the compose + kind stacks).
+  `local-environment` (bring up / tear down / troubleshoot the compose + kind stacks),
+  `eks-platform-ops` (kind/EKS context discipline, `gitops/*` branch delivery, ArgoCD
+  selfHeal, cross-environment observability collisions).
 - Commands: `/adr` (scaffold an ADR), `/bootstrap [compose|kind] [up|down]` (drive a local
   environment end-to-end via the `local-environment` skill).
