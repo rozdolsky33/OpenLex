@@ -33,6 +33,17 @@ spec:
       containers:
         - name: api
           imagePullPolicy: IfNotPresent
+          # CORS: the browser SPA is served from https://app.openlex.arwest.dev (CloudFront), a
+          # different origin than the API (https://api.openlex.arwest.dev), so the API must allow
+          # it explicitly. openlex_shared.config.cors_allow_origins defaults to
+          # ["http://localhost:5173"] (local dev only); without this override every browser call
+          # from the deployed web app fails its CORS preflight ("Disallowed CORS origin"), which
+          # the SPA surfaces as the generic "Something went wrong" (a blocked request never
+          # returns a 401, so it isn't shown as bad credentials). pydantic-settings parses this
+          # list field as JSON. localhost kept so a local web build can point at the prod API.
+          env:
+            - name: CORS_ALLOW_ORIGINS
+              value: '["https://app.openlex.arwest.dev","http://localhost:5173"]'
           resources:
             requests:
               cpu: 250m
