@@ -31,8 +31,11 @@ spec:
               service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
               service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "instance"
           resources:
-            requests: { cpu: 50m, memory: 90Mi }
-            limits: { cpu: 200m, memory: 180Mi }
+            # 180Mi OOMKills the controller (exit 137) — it terminates TLS, handles every ingress
+            # + the oauth2 auth subrequests, and reloads on each ingress change. OOM flapping drops
+            # connections (curl: Empty reply / Failed to connect). Raised so it stays up.
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
   destination:
     server: https://kubernetes.default.svc
     namespace: ingress-nginx
