@@ -32,7 +32,10 @@ spec:
           provider: github
           github-user: "rozdolsky33"
           email-domain: "*"
-          upstreams: static://202
+          # oauth2-proxy's flag is --upstream (singular, repeatable); `upstreams` renders
+          # --upstreams, which the binary rejects ("unknown flag: --upstreams") -> CrashLoopBackOff
+          # -> ingress-nginx's auth subrequest fails -> 500 on grafana.<domain>.
+          upstream: static://202
           http-address: "0.0.0.0:4180"
           cookie-secure: "true"
           cookie-samesite: "lax"
