@@ -1,0 +1,26 @@
+# infra/kubernetes/overlays/eks-demo/servicemonitor-openlex-api.yaml
+#
+# Tells the kube-prometheus-stack Prometheus to scrape openlex-api's /metrics (the app emits
+# openlex_* metrics — request counts/latency, per-tier quota, Anthropic token/cost — that every
+# Applications/Executive/Product dashboard queries). Without it, Prometheus has zero openlex_*
+# series and those dashboards render "No data" even though the app is healthy and /metrics works.
+#
+# The eks-demo overlay originally had no ServiceMonitor because the observability stack wasn't
+# installed here yet (the kind overlay has the twin, infra/kubernetes/overlays/kind/
+# servicemonitor-openlex-api.yaml). eks-demo now runs kube-prometheus-stack, so the CRD exists
+# (postgres-exporter already has a working ServiceMonitor) and Prometheus's serviceMonitorSelector
+# is empty (selects all), so this is picked up automatically.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: openlex-api
+  labels:
+    app.kubernetes.io/name: openlex-api
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openlex-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
