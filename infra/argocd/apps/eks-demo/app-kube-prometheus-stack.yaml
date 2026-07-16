@@ -72,6 +72,26 @@ spec:
             # can't happen — there's never a second pod contending for the DB file.
             deploymentStrategy:
               type: Recreate
+            # SSO auto-login: oauth2-proxy (app-oauth2-proxy.yaml) authenticates the user via GitHub
+            # at the ingress edge and — running with --set-xauthrequest=true — forwards their identity
+            # as X-Auth-Request-Email (the grafana Ingress copies it to this upstream via
+            # auth-response-headers). auth.proxy makes Grafana TRUST that header and auto-login the
+            # user, instead of falling back to its own admin login form after GitHub (the double-login
+            # users hit otherwise). New users are auto-created (auto_sign_up) and assigned Admin
+            # (users.auto_assign_org_role) — acceptable because oauth2-proxy already restricts who can
+            # reach Grafana at all. whitelist pins header-setting to the in-cluster pod CIDR (only
+            # ingress-nginx reaches Grafana), so the identity header can't be spoofed from outside.
+            # The built-in admin login still works for direct (port-forward) break-glass access.
+            grafana.ini:
+              auth.proxy:
+                enabled: true
+                header_name: X-Auth-Request-Email
+                header_property: email
+                auto_sign_up: true
+                whitelist: 10.42.0.0/16
+                sync_ttl: 60
+              users:
+                auto_assign_org_role: Admin
             nodeSelector:
               openlex.dev/workload: observability
             tolerations:
