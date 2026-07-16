@@ -37,16 +37,6 @@ spec:
           prometheus:
             prometheusSpec:
               retention: 6h
-              # Stamp every scraped series with cluster="openlex-eks-demo". The Infrastructure
-              # dashboards (node-exporter mixin: nodes / node-rsrc-use / node-cluster-rsrc-use)
-              # have a `cluster` template variable sourced from label_values(node_uname_info, cluster)
-              # and chain `instance` off it, then filter panels by instance="$instance". Without a
-              # cluster label that variable is empty, the chain doesn't resolve, $instance ends up
-              # empty, and every panel matches instance="" → "No data" (the metrics themselves are
-              # present — confirmed node_load1 etc. return values). One external label makes the
-              # variables populate and the dashboards render.
-              externalLabels:
-                cluster: openlex-eks-demo
               nodeSelector:
                 openlex.dev/workload: observability
               tolerations:
@@ -163,6 +153,23 @@ spec:
               requests: { cpu: 10m, memory: 32Mi }
               limits: { cpu: 50m, memory: 64Mi }
           prometheus-node-exporter:
+            # Stamp cluster="openlex-eks-demo" onto every node-exporter series at scrape time. The
+            # Infrastructure dashboards (node-exporter mixin: nodes / node-rsrc-use /
+            # node-cluster-rsrc-use) have a `cluster` template variable from
+            # label_values(node_uname_info, cluster) and chain `instance` off it, then filter panels
+            # by instance="$instance". With no cluster label the variable is empty, the chain doesn't
+            # resolve, $instance ends up empty, and instance="" matches nothing → "No data" (the
+            # metrics themselves are present). This must be a scrape-time relabeling (targetLabel on
+            # the ServiceMonitor), NOT prometheusSpec.externalLabels — external labels are only
+            # attached on remote-write/federation/alerting, never in the local queries the dashboards
+            # run, so they don't populate the variable. The mixin's recording rules
+            # (instance:node_cpu_utilisation:rate5m, …) aggregate with `without(...)`, so they inherit
+            # this cluster label automatically.
+            prometheus:
+              monitor:
+                relabelings:
+                  - targetLabel: cluster
+                    replacement: openlex-eks-demo
             # DaemonSet — must run on every node (including control-plane and the dedicated
             # observability node, to report their own metrics), so no nodeSelector restricting
             # it. The chart's own default tolerations (verified: charts/prometheus-node-
