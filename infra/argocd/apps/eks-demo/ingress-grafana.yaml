@@ -1,11 +1,48 @@
 # infra/argocd/apps/eks-demo/ingress-grafana.yaml
 #
-# nginx.ingress.kubernetes.io/auth-url + auth-signin gate access via oauth2-proxy
-# (app-oauth2-proxy.yaml) -- the standard, documented ingress-nginx + oauth2-proxy
-# integration pattern. Targets kube-prometheus-stack-grafana (Task 3's bundled Grafana, not a
-# standalone chart). Lives here, not infra/kubernetes/overlays/eks-demo/, for the same
-# namespace-transformer reason as externalsecret-oauth2-proxy.yaml above. Replace <DOMAIN>
-# with the real demo domain.
+# TWO Ingresses for grafana.openlex.arwest.dev, the canonical ingress-nginx + oauth2-proxy split:
+#
+#   1. `grafana-oauth2` (this first doc) routes /oauth2/* straight to oauth2-proxy with NO auth
+#      annotations. This MUST be a separate Ingress: ingress-nginx applies auth-url/auth-signin to
+#      *every* path in an Ingress, so if /oauth2 shared an Ingress with the gated / path, the login
+#      endpoints (/oauth2/start, /oauth2/callback) would themselves get auth-gated -> the browser
+#      redirects /oauth2/start -> /oauth2/start -> ... forever (an infinite loop, seen as "no
+#      Grafana access"). Keeping /oauth2 ungated lets oauth2-proxy actually redirect to GitHub.
+#   2. `grafana` (second doc) carries the auth-url/auth-signin annotations and routes / to Grafana.
+#
+# Both share the host + grafana-tls cert (cert-manager annotation lives on the `grafana` doc; the
+# oauth2 doc just reuses the same secret). Targets kube-prometheus-stack-grafana (the bundled
+# Grafana). Lives here, not infra/kubernetes/overlays/eks-demo/, for the same namespace-transformer
+# reason as externalsecret-oauth2-proxy.yaml.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana-oauth2
+  namespace: observability
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # Deliberately NO auth-url/auth-signin here — these are the oauth2-proxy login endpoints and
+    # must stay ungated, otherwise the sign-in flow loops back on itself.
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - grafana.openlex.arwest.dev
+      secretName: grafana-tls
+  rules:
+    - host: grafana.openlex.arwest.dev
+      http:
+        paths:
+          - path: /oauth2
+            pathType: Prefix
+            backend:
+              service:
+                name: oauth2-proxy
+                port:
+                  # the oauth2-proxy Service exposes port 80 (-> pod's 4180); 4180 is the pod
+                  # port, not a Service port, so routing to :4180 yields 503 -> grafana 500.
+                  number: 80
+---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -30,15 +67,6 @@ spec:
     - host: grafana.openlex.arwest.dev
       http:
         paths:
-          - path: /oauth2
-            pathType: Prefix
-            backend:
-              service:
-                name: oauth2-proxy
-                port:
-                  # the oauth2-proxy Service exposes port 80 (-> pod's 4180); 4180 is the pod
-                  # port, not a Service port, so routing to :4180 yields 503 -> grafana 500.
-                  number: 80
           - path: /
             pathType: Prefix
             backend:
