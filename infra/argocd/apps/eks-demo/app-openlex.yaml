@@ -5,13 +5,29 @@ kind: Application
 metadata:
   name: openlex
   namespace: argocd
+  # Argo CD Image Updater config (see app-argocd-image-updater.yaml + imageupdater-openlex.yaml).
+  # deploy.yml pushes <ecr>/openlex-{api,worker}:<sha> images but no longer commits tag bumps; the
+  # updater picks the newest-built image and git-writes the kustomize tags to the `gitops/eks`
+  # branch (based on main), which this Application then tracks. Keeps main code-only. (web is not
+  # here — it ships to CloudFront via deploy-static.yml, not the in-cluster app.)
   annotations:
     argocd.argoproj.io/sync-wave: "1"
+    # Single line, no spaces after commas (a leading space would be read as part of the alias).
+    argocd-image-updater.argoproj.io/image-list: "openlex-api=651261648885.dkr.ecr.us-east-1.amazonaws.com/openlex-api,openlex-worker=651261648885.dkr.ecr.us-east-1.amazonaws.com/openlex-worker"
+    argocd-image-updater.argoproj.io/update-strategy: newest-build
+    # Only immutable 40-hex commit-sha tags (deploy.yml tags images with github.sha).
+    argocd-image-updater.argoproj.io/allow-tags: regexp:^[0-9a-f]{40}$
+    argocd-image-updater.argoproj.io/write-back-method: git:secret:argocd/argocd-image-updater-git
+    argocd-image-updater.argoproj.io/write-back-target: kustomization
+    # base:target -- base each write on main (latest code), commit to gitops/eks.
+    argocd-image-updater.argoproj.io/git-branch: main:gitops/eks
 spec:
   project: openlex-eks-demo
   source:
     repoURL: https://github.com/rozdolsky33/OpenLex.git
-    targetRevision: main
+    # Machine-managed image-state branch (main + current image tags), written by the image
+    # updater. main itself never gets image-tag commits, so develop->main promotions stay clean.
+    targetRevision: gitops/eks
     path: infra/kubernetes/overlays/eks-demo
   destination:
     server: https://kubernetes.default.svc

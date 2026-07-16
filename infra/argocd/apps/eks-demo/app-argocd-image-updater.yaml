@@ -1,0 +1,66 @@
+# infra/argocd/apps/eks-demo/app-argocd-image-updater.yaml
+#
+# Argo CD Image Updater for eks-demo — the ECR analogue of the kind app
+# (infra/argocd/apps/kind/app-argocd-image-updater.yaml, which reads GHCR). Flow:
+#
+#   deploy.yml builds + pushes <ecr>/openlex-{api,worker}:<sha>  (no git commit)
+#        -> this controller watches ECR, picks the newest-built image, and git-writes the
+#           kustomize image tags to the `gitops/eks` branch (based on main, see
+#           app-openlex.yaml's git-branch annotation) -- main stays code-only.
+#        -> the openlex Application tracks `gitops/eks`, so ArgoCD deploys the new image.
+#
+# ECR auth is IRSA, not a static pull secret: the updater's serviceAccount assumes the
+# image_updater IAM role (iam_irsa_image_updater.tf), and the ecr-login.sh auth script below
+# calls `aws ecr get-authorization-token` (the updater image ships the aws CLI). Git write-back
+# still needs the `argocd-image-updater-git` Secret in argocd — provided by
+# externalsecret-image-updater-git.yaml from AWS Secrets Manager. See ADR-0007 /
+# docs/infrastructure/eks-argocd-bootstrap.md.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-image-updater
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1" # before the openlex app it feeds
+spec:
+  project: openlex-eks-demo
+  sources:
+    - repoURL: https://argoproj.github.io/argo-helm
+      chart: argocd-image-updater
+      targetRevision: "1.2.4"
+      helm:
+        valuesObject:
+          # IRSA: the role that grants ECR read (get-authorization-token + describe/list images).
+          serviceAccount:
+            create: true
+            name: argocd-image-updater
+            annotations:
+              eks.amazonaws.com/role-arn: "<IMAGE_UPDATER_ROLE_ARN>"
+          config:
+            logLevel: info
+            registries:
+              - name: ECR
+                prefix: 651261648885.dkr.ecr.us-east-1.amazonaws.com
+                api_url: https://651261648885.dkr.ecr.us-east-1.amazonaws.com
+                ping: yes
+                # ext script -> aws ecr get-authorization-token (auth'd by the IRSA role above).
+                # credsexpire < ECR's 12h token lifetime so the updater refreshes in time.
+                credentials: ext:/scripts/ecr-login.sh
+                credsexpire: 10h
+          # Mounted at /scripts; outputs "AWS:<password>" which the updater uses as registry creds.
+          authScripts:
+            enabled: true
+            scripts:
+              ecr-login.sh: |
+                #!/bin/sh
+                aws ecr --region us-east-1 get-authorization-token \
+                  --output text --query 'authorizationData[].authorizationToken' | base64 -d
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

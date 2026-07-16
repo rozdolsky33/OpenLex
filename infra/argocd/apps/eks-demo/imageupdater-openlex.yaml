@@ -1,0 +1,22 @@
+# Argo CD Image Updater v1.2.x is CRD-based: it acts on `ImageUpdater` custom resources, not on
+# the legacy Application annotations directly. This CR selects the openlex Application and, with
+# `useAnnotations: true`, tells the controller to read the image config (image-list,
+# update-strategy, write-back-method, git-branch, allow-tags) from that Application's annotations
+# (see app-openlex.yaml). Mirrors infra/argocd/apps/kind/imageupdater-openlex.yaml. See ADR-0007.
+#
+# Depends on the ImageUpdater CRD installed by app-argocd-image-updater.yaml (sync-wave -1); this
+# is a later wave so it applies after the chart, and ArgoCD retries until the CRD exists.
+apiVersion: argocd-image-updater.argoproj.io/v1alpha1
+kind: ImageUpdater
+metadata:
+  name: openlex
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    # The ImageUpdater CRD is installed by the wave -1 chart; skip the up-front dry-run so this
+    # doesn't fail validation before that CRD exists.
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  applicationRefs:
+    - namePattern: openlex
+      useAnnotations: true

@@ -1,20 +1,28 @@
 #!/usr/bin/env bash
-# One-time: create/reset the `gitops/kind` branch from origin/develop.
+# One-time: create/reset the machine-managed gitops image-state branch for an environment.
 #
-# The kind openlex Application tracks `gitops/kind` (not develop) -- it's the machine-managed
-# "deployed image state" branch that Argo CD Image Updater git-writes the current image tags
-# into (see infra/argocd/apps/kind/app-openlex.yaml). It must exist before the openlex app can
-# sync on a fresh cluster; the updater keeps it up to date afterward (base develop + image tags).
+#   scripts/kind/gitops-branch-init.sh kind       # gitops/kind  from origin/develop
+#   scripts/kind/gitops-branch-init.sh eks-demo   # gitops/eks   from origin/main
 #
-# Safe to re-run: fast-forwards gitops/kind to the latest develop when the updater is idle. Do
-# NOT run this while the updater has un-promoted image tags on gitops/kind that develop lacks --
-# it would reset them (they'd be re-derived on the next deploy anyway, but avoid the churn).
+# The openlex Application tracks this branch (not develop/main) -- it's the branch Argo CD Image
+# Updater git-writes the current image tags into (see infra/argocd/apps/<env>/app-openlex.yaml).
+# It must exist before the openlex app can sync on a fresh cluster; the updater keeps it up to
+# date afterward (base branch code + image tags).
+#
+# Safe to re-run: fast-forwards the gitops branch to the latest base when the updater is idle. Do
+# NOT run this while the updater has un-promoted image tags on the gitops branch that the base
+# lacks -- it would reset them (re-derived on the next deploy anyway, but avoid the churn).
 set -euo pipefail
 
-BRANCH="gitops/kind"
-BASE="origin/develop"
+ENV="${1:-kind}"
+case "${ENV}" in
+  kind)     BRANCH="gitops/kind"; BASE_REF="develop" ;;
+  eks-demo) BRANCH="gitops/eks";  BASE_REF="main" ;;
+  *) echo "Usage: $0 <kind|eks-demo>" >&2; exit 1 ;;
+esac
+BASE="origin/${BASE_REF}"
 
-git fetch --quiet origin develop
+git fetch --quiet origin "${BASE_REF}"
 echo "Pushing ${BASE} -> ${BRANCH}..."
 git push origin "${BASE}:refs/heads/${BRANCH}"
 echo "'${BRANCH}' branch is now at $(git rev-parse --short "${BASE}"). The openlex Application"
