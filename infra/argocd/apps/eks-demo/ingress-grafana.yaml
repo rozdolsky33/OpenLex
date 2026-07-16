@@ -12,7 +12,7 @@ metadata:
   name: grafana
   namespace: observability
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-staging
+    cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/auth-url: "https://grafana.openlex.arwest.dev/oauth2/auth"
     nginx.ingress.kubernetes.io/auth-signin: "https://grafana.openlex.arwest.dev/oauth2/start?rd=$scheme://$host$request_uri"
