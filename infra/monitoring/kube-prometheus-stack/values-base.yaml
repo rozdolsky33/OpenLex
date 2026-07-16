@@ -133,6 +133,41 @@ prometheus:
     # generator ever successfully writes, though the deeper cause of that specific error was
     # metrics-generator not being enabled at all -- see tempo's values file).
     enableRemoteWriteReceiver: true
+    # Previously no storageSpec at all -- Prometheus's TSDB lived on emptyDir (wiped on every
+    # pod restart/reschedule) and each per-app Application additionally capped `retention: 6h`
+    # on top of that, so metrics/counters routinely appeared to "expire" well within a single
+    # day. The two settings were linked: 6h was chosen specifically because emptyDir shares the
+    # node's root filesystem with every other pod on it (the same "no space left on device"
+    # failure mode already hit and fixed for Tempo -- see tempo/values-base.yaml's header
+    # comment), so an unbounded retention on unbounded shared disk was never safe. Fixed the
+    # actual cause instead of just the symptom: a dedicated, capped PVC (same 10Gi convention
+    # as Tempo/Loki, same no-storageClassName-override reliance on each cluster's default
+    # StorageClass), which is what makes a longer retention safe to set at all now.
+    #
+    # This is a StatefulSet-embedded volumeClaimTemplate (Prometheus Operator generates the
+    # Prometheus StatefulSet with this as its own volumeClaimTemplates entry), not a standalone
+    # top-level PVC object -- unlike the Grafana PVC that deadlocked against ArgoCD's
+    # PVC-must-be-Bound-before-Deployment-rolls health gate on eks-demo's WaitForFirstConsumer
+    # gp3 StorageClass (see docs/postmortems/2026-07-16-eks-apps-node-capacity-and-grafana-pvc-
+    # deadlock.md), the StatefulSet controller itself creates pod and PVC together, so
+    # WaitForFirstConsumer binds against a pod the same reconcile is already creating rather
+    # than one gated behind a separate, blocked sync step. Expected to avoid that deadlock
+    # class, but -- per this project's own "verify against the live resource, not the
+    # assumption" lesson from that exact postmortem -- confirm the PVC actually reaches Bound
+    # on both clusters after this syncs, don't just trust the reasoning here.
+    retention: 15d
+    # Hard size-based cap so Prometheus prunes old blocks by size if 15d of real data would
+    # ever exceed the PVC before the time-based retention does -- whichever limit is hit
+    # first wins. Set below the 10Gi PVC size, not equal to it, so Prometheus has headroom to
+    # compact/write new blocks without racing against a completely full volume.
+    retentionSize: "9GB"
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
 
 prometheusOperator:
   # Prometheus Operator's own container resources — the operator control-loop process
