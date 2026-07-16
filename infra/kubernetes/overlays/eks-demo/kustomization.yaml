@@ -14,6 +14,9 @@ resources:
   # (postgres-exporter) don't deadlock on a wave-1 Secret — api/worker just consume it by name.
   - ingress-api.yaml
   - pdb-openlex-api.yaml
+  # Prometheus scrape config for openlex-api's /metrics — without it the openlex_* app metrics
+  # never reach Prometheus and every app dashboard shows "No data". See the file's header.
+  - servicemonitor-openlex-api.yaml
 
 # Replace <ECR_ACCOUNT>.dkr.ecr.<REGION>.amazonaws.com with `terraform output ecr_repository_urls`
 # (infra/terraform) after the first apply, and bump the tag on every image push. See
