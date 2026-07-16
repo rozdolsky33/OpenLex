@@ -26,9 +26,13 @@ variable "cluster_version" {
 }
 
 variable "node_instance_type" {
-  description = "Instance type for the `apps` node group — no GPU needed (see ml/model_cards/bge-small-en-v1.5.md)"
+  # t4g.large (not medium): the apps node group's pod capacity, not CPU/mem, is the constraint —
+  # t4g.medium caps at ~17 max-pods (ENI-IP bound) and the platform+app exhaust it, stranding
+  # reschedules (api surge pod) as Pending. t4g.large gives ~35 max-pods with no VPC-CNI prefix-
+  # delegation complexity (which wouldn't create its addon reliably here). No GPU needed either way.
+  description = "Instance type for the `apps` node group (t4g.large for pod capacity — see comment)"
   type        = string
-  default     = "t4g.medium"
+  default     = "t4g.large"
 }
 
 variable "observability_node_instance_type" {
