@@ -14,7 +14,6 @@ resources:
   # (postgres-exporter) don't deadlock on a wave-1 Secret — api/worker just consume it by name.
   - ingress-api.yaml
   - pdb-openlex-api.yaml
-  - storageclass-gp3.yaml
 
 # Replace <ECR_ACCOUNT>.dkr.ecr.<REGION>.amazonaws.com with `terraform output ecr_repository_urls`
 # (infra/terraform) after the first apply, and bump the tag on every image push. See
