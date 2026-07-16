@@ -60,6 +60,20 @@ spec:
                 requests: { cpu: 10m, memory: 32Mi }
                 limits: { cpu: 100m, memory: 64Mi }
           grafana:
+            # PVC (gp3) so Grafana's SQLite DB persists across restarts. With the default emptyDir
+            # every restart re-provisions all dashboards into a fresh DB, and the resulting
+            # SQLITE_BUSY lock returns HTTP 500 for ~1-2 min each time. A persistent DB is
+            # provisioned once, so restarts are instant and the 500 window is gone.
+            persistence:
+              enabled: true
+              type: pvc
+              storageClassName: gp3
+              accessModes: ["ReadWriteOnce"]
+              size: 2Gi
+            # Recreate, not RollingUpdate: a ReadWriteOnce EBS volume can't be attached to the old
+            # and new pods at once, so a rolling update would deadlock on the PVC.
+            deploymentStrategy:
+              type: Recreate
             nodeSelector:
               openlex.dev/workload: observability
             tolerations:
