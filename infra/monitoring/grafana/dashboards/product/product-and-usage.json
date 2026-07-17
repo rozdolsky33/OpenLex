@@ -38,7 +38,7 @@
       "id": 2,
       "type": "timeseries",
       "title": "Abstain rate (%, 1h)",
-      "description": "100 * sum(rate(openlex_query_abstained_total[1h])) / sum(rate(openlex_http_requests_total{route=\"/query\",status_class=\"2xx\"}[1h])) -- share of successful /query calls that abstained rather than answering.",
+      "description": "100 * (sum(rate(openlex_query_abstained_total[1h])) OR on() vector(0)) / clamp_min(sum(rate(openlex_http_requests_total{route=\"/query\",status_class=\"2xx\"}[1h])) OR on() vector(0), 1e-9) -- share of successful /query calls that abstained rather than answering. clamp_min on the denominator avoids a 0/0 NaN (dropped by Grafana as a gap) whenever there's no /query traffic in a given 1h bucket.",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
@@ -50,7 +50,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "100 * sum(rate(openlex_query_abstained_total[1h])) / sum(rate(openlex_http_requests_total{route=\"/query\",status_class=\"2xx\"}[1h]))",
+          "expr": "100 * (sum(rate(openlex_query_abstained_total[1h])) OR on() vector(0)) / clamp_min(sum(rate(openlex_http_requests_total{route=\"/query\",status_class=\"2xx\"}[1h])) OR on() vector(0), 1e-9)",
           "legendFormat": "abstain rate"
         }
       ]
