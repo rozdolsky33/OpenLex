@@ -30,9 +30,11 @@ async def upsert_document(
     normalized: dict[str, Any],
     chunks: list[ChunkData],
     force: bool = False,
-) -> tuple[Document, int]:
-    """Returns (document_row, chunks_written_count); 0 when an identical version already
-    exists and force=False. `normalized` is shaped by either normalize_statute or
+) -> tuple[Document, int, bool]:
+    """Returns (document_row, chunks_written_count, wrote_new_version). On an identical-version
+    no-op skip (force=False and the latest existing snapshot matches), returns
+    (existing, 0, False) -- callers must not count a skip as an ingested document, or re-ingest
+    metrics overstate the work done. `normalized` is shaped by either normalize_statute or
     normalize_case -- both share the keys used here. `court`/`decision_date` use `.get()`
     because normalize_statute's output never sets them (defaults to None, matching the
     original statute-only behavior exactly)."""
@@ -42,7 +44,7 @@ async def upsert_document(
     existing = await _latest_existing(session, source, source_id)
 
     if existing is not None and not force and existing.raw_snapshot == normalized["raw_snapshot"]:
-        return existing, 0
+        return existing, 0, False
 
     next_version = existing.version + 1 if existing is not None else 1
 
@@ -77,4 +79,4 @@ async def upsert_document(
             )
         )
 
-    return document, len(chunks)
+    return document, len(chunks), True

@@ -20,9 +20,9 @@ async def upsert_statute_document(
     normalized: dict[str, Any],
     chunks: list[ChunkData],
     force: bool = False,
-) -> tuple[Document, int]:
-    """Returns (document_row, chunks_written_count). chunks_written_count is 0 when an
-    identical version already exists and force=False (no-op skip). Thin wrapper over
+) -> tuple[Document, int, bool]:
+    """Returns (document_row, chunks_written_count, wrote_new_version). On an identical-version
+    no-op skip (force=False), returns (existing, 0, False). Thin wrapper over
     pipelines.indexing._shared's write path, shared with cases.py's upsert_case_document."""
     return await upsert_document(session, normalized, chunks, force=force)
 
@@ -39,8 +39,10 @@ async def upsert_all_seed_statutes(session: AsyncSession, force: bool = False) -
         try:
             normalized = normalize_statute(raw)
             chunks = chunk_statute_text(normalized["text"], citation=normalized["citation"])
-            _, n_chunks = await upsert_statute_document(session, normalized, chunks, force=force)
-            documents_ingested += 1
+            _, n_chunks, wrote = await upsert_statute_document(
+                session, normalized, chunks, force=force
+            )
+            documents_ingested += 1 if wrote else 0
             chunks_created += n_chunks
         except Exception as exc:  # collected as a per-document error, not raised
             errors.append(f"{raw.get('lawId')}/{raw.get('locationId')}: {exc}")
