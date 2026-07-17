@@ -24,7 +24,7 @@ images:
 - name: ghcr.io/rozdolsky33/openlex-api
   newTag: a995da0fc80a7d504b1540454f2b6fedc8beb5ff
 - name: ghcr.io/rozdolsky33/openlex-worker
-  newTag: 559a6ec772f89ba8edeb57977a50f36017a44344
+  newTag: a995da0fc80a7d504b1540454f2b6fedc8beb5ff
 - name: ghcr.io/rozdolsky33/openlex-web
   newTag: 559a6ec772f89ba8edeb57977a50f36017a44344
 patches:
