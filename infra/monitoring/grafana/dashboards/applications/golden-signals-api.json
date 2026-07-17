@@ -44,7 +44,7 @@
       "id": 6,
       "type": "timeseries",
       "title": "Error rate — 5xx/4xx as % of total (rate, 5m)",
-      "description": "sum(rate(openlex_http_requests_total{status_class=~\"4xx|5xx\"}[5m])) / sum(rate(openlex_http_requests_total[5m])) by route -- server errors (5xx) and client errors (4xx) tracked separately since only 5xx is actionable on-call, 4xx is often client misuse.",
+      "description": "sum(rate(openlex_http_requests_total{status_class=~\"4xx|5xx\"}[5m])) / clamp_min(sum(rate(openlex_http_requests_total[5m])), 1e-9) by route -- server errors (5xx) and client errors (4xx) tracked separately since only 5xx is actionable on-call, 4xx is often client misuse. clamp_min on the denominator avoids a 0/0 NaN (dropped by Grafana as a gap) for a route that has traffic but hits a rate=0 bucket.",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
@@ -63,13 +63,13 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (route) (rate(openlex_http_requests_total{status_class=\"5xx\"}[5m])) / sum by (route) (rate(openlex_http_requests_total[5m]))",
+          "expr": "sum by (route) (rate(openlex_http_requests_total{status_class=\"5xx\"}[5m])) / clamp_min(sum by (route) (rate(openlex_http_requests_total[5m])), 1e-9)",
           "legendFormat": "5xx — {{route}}"
         },
         {
           "refId": "B",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (route) (rate(openlex_http_requests_total{status_class=\"4xx\"}[5m])) / sum by (route) (rate(openlex_http_requests_total[5m]))",
+          "expr": "sum by (route) (rate(openlex_http_requests_total{status_class=\"4xx\"}[5m])) / clamp_min(sum by (route) (rate(openlex_http_requests_total[5m])), 1e-9)",
           "legendFormat": "4xx — {{route}}"
         }
       ]
