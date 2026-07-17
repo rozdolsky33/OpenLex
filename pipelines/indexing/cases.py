@@ -22,7 +22,10 @@ async def upsert_case_document(
     normalized: dict[str, Any],
     chunks: list[ChunkData],
     force: bool = False,
-) -> tuple[Document, int]:
+) -> tuple[Document, int, bool]:
+    """Returns (document_row, chunks_written_count, wrote_new_version); (existing, 0, False) on
+    an identical-version no-op skip. Thin wrapper over pipelines.indexing._shared's write path,
+    shared with statutes.py's upsert_statute_document."""
     return await upsert_document(session, normalized, chunks, force=force)
 
 
@@ -39,8 +42,10 @@ async def upsert_all_seed_cases(session: AsyncSession, force: bool = False) -> I
         try:
             normalized = normalize_case(raw)
             chunks = chunk_case_text(normalized["text"], citation=normalized["citation"])
-            _, n_chunks = await upsert_case_document(session, normalized, chunks, force=force)
-            documents_ingested += 1
+            _, n_chunks, wrote = await upsert_case_document(
+                session, normalized, chunks, force=force
+            )
+            documents_ingested += 1 if wrote else 0
             chunks_created += n_chunks
         except Exception as exc:  # collected as a per-document error, not raised
             errors.append(f"{raw.get('courtlistener_cluster_id')}: {exc}")

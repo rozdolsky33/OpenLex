@@ -3,7 +3,7 @@ from datetime import date
 from pathlib import Path
 
 from legal_models.orm import Chunk, Document
-from pipelines.indexing.cases import upsert_case_document
+from pipelines.indexing.cases import upsert_all_seed_cases, upsert_case_document
 from pipelines.normalization.cases import normalize_case
 from sqlalchemy import select
 
@@ -22,7 +22,7 @@ def _normalized_and_chunks() -> tuple[dict, list]:
 async def test_upsert_case_document_creates_document_and_chunks(db_session) -> None:
     normalized, chunks = _normalized_and_chunks()
 
-    document, n_chunks = await upsert_case_document(db_session, normalized, chunks)
+    document, n_chunks, wrote = await upsert_case_document(db_session, normalized, chunks)
 
     assert document.version == 1
     assert document.citation == "47 N.Y.2d 316"
@@ -31,6 +31,7 @@ async def test_upsert_case_document_creates_document_and_chunks(db_session) -> N
     # Proves multi-chunk actually happens for case law, unlike the statute equivalent
     # (test_indexing.py's `n_chunks == len(chunks) == 1`).
     assert n_chunks == len(chunks) > 1
+    assert wrote is True
 
     stored_chunks = (
         (await db_session.execute(select(Chunk).where(Chunk.document_id == document.id)))
@@ -46,13 +47,16 @@ async def test_upsert_case_document_creates_document_and_chunks(db_session) -> N
 async def test_upsert_case_document_is_idempotent_without_force(db_session) -> None:
     normalized, chunks = _normalized_and_chunks()
 
-    first_doc, _ = await upsert_case_document(db_session, normalized, chunks)
+    first_doc, _, _ = await upsert_case_document(db_session, normalized, chunks)
     await db_session.flush()
-    second_doc, second_chunks_written = await upsert_case_document(db_session, normalized, chunks)
+    second_doc, second_chunks_written, wrote = await upsert_case_document(
+        db_session, normalized, chunks
+    )
 
     assert second_doc.id == first_doc.id
     assert second_doc.version == 1
     assert second_chunks_written == 0
+    assert wrote is False
 
     all_versions = (
         (
@@ -72,15 +76,16 @@ async def test_upsert_case_document_is_idempotent_without_force(db_session) -> N
 async def test_upsert_case_document_force_creates_new_version(db_session) -> None:
     normalized, chunks = _normalized_and_chunks()
 
-    first_doc, _ = await upsert_case_document(db_session, normalized, chunks)
+    first_doc, _, _ = await upsert_case_document(db_session, normalized, chunks)
     await db_session.flush()
-    second_doc, second_chunks_written = await upsert_case_document(
+    second_doc, second_chunks_written, wrote = await upsert_case_document(
         db_session, normalized, chunks, force=True
     )
 
     assert second_doc.id != first_doc.id
     assert second_doc.version == 2
     assert second_chunks_written == len(chunks)
+    assert wrote is True
 
     all_versions = (
         (
@@ -95,3 +100,18 @@ async def test_upsert_case_document_force_creates_new_version(db_session) -> Non
         .all()
     )
     assert {d.version for d in all_versions} == {1, 2}
+
+
+async def test_upsert_all_seed_cases_reingest_reports_no_new_work(db_session) -> None:
+    """A re-ingest of unchanged data must report 0 documents / 0 chunks -- the dedup path
+    wrote nothing, so the counters must not claim it did (the '69 documents / 0 chunks'
+    dashboard symptom). Uses the local seed loader, so no network fetch."""
+    first = await upsert_all_seed_cases(db_session)
+    assert first.status == "ok"
+    assert first.documents_ingested > 0
+    assert first.chunks_created > 0
+
+    second = await upsert_all_seed_cases(db_session)
+    assert second.status == "ok"
+    assert second.documents_ingested == 0
+    assert second.chunks_created == 0

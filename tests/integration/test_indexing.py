@@ -21,11 +21,12 @@ def _normalized_and_chunks() -> tuple[dict, list]:
 async def test_upsert_statute_document_creates_document_and_chunks(db_session) -> None:
     normalized, chunks = _normalized_and_chunks()
 
-    document, n_chunks = await upsert_statute_document(db_session, normalized, chunks)
+    document, n_chunks, wrote = await upsert_statute_document(db_session, normalized, chunks)
 
     assert document.version == 1
     assert document.citation == "RPAPL § 711"
     assert n_chunks == len(chunks) == 1
+    assert wrote is True
 
     stored_chunks = (
         (await db_session.execute(select(Chunk).where(Chunk.document_id == document.id)))
@@ -40,15 +41,16 @@ async def test_upsert_statute_document_creates_document_and_chunks(db_session) -
 async def test_upsert_statute_document_is_idempotent_without_force(db_session) -> None:
     normalized, chunks = _normalized_and_chunks()
 
-    first_doc, _ = await upsert_statute_document(db_session, normalized, chunks)
+    first_doc, _, _ = await upsert_statute_document(db_session, normalized, chunks)
     await db_session.flush()
-    second_doc, second_chunks_written = await upsert_statute_document(
+    second_doc, second_chunks_written, wrote = await upsert_statute_document(
         db_session, normalized, chunks
     )
 
     assert second_doc.id == first_doc.id
     assert second_doc.version == 1
     assert second_chunks_written == 0
+    assert wrote is False
 
     all_versions = (
         (
@@ -68,15 +70,16 @@ async def test_upsert_statute_document_is_idempotent_without_force(db_session) -
 async def test_upsert_statute_document_force_creates_new_version(db_session) -> None:
     normalized, chunks = _normalized_and_chunks()
 
-    first_doc, _ = await upsert_statute_document(db_session, normalized, chunks)
+    first_doc, _, _ = await upsert_statute_document(db_session, normalized, chunks)
     await db_session.flush()
-    second_doc, second_chunks_written = await upsert_statute_document(
+    second_doc, second_chunks_written, wrote = await upsert_statute_document(
         db_session, normalized, chunks, force=True
     )
 
     assert second_doc.id != first_doc.id
     assert second_doc.version == 2
     assert second_chunks_written == 1
+    assert wrote is True
 
     all_versions = (
         (
