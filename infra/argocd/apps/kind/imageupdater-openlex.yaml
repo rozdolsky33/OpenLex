@@ -17,6 +17,13 @@ metadata:
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "1"
+    # The ImageUpdater CRD is installed by a *different* app (app-argocd-image-updater.yaml), so on
+    # a fresh cluster it does not exist when root-kind builds its sync tasks. Without this, ArgoCD
+    # fails the whole app-of-apps sync up front ("failed to discover server resources for group
+    # version argocd-image-updater.argoproj.io/v1alpha1"), so no child apps -- including the one
+    # that installs the CRD -- ever get created. Skipping the dry run lets the earlier waves apply
+    # and this CR converge on a later reconcile, once the chart has installed the CRD.
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   applicationRefs:
     - namePattern: openlex
